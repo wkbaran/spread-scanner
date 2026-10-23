@@ -29,6 +29,14 @@ This started as part of a Schwab scanner and the Schwab login is the reason it i
 - A quote band must extend past the target strike by the widest spread width, or the long legs are never quoted.
 - Quotes are only live in the regular session. After the close they are the last prices, not a market.
 
+## The ranking is a guess, and says so
+
+`src/rank.ts` scores candidates with weights nobody has validated. Do not describe it as finding "the best" spreads. The components are ranked (0 to 1) rather than combined raw so that a weight means the same thing whatever the units; underlying-level components are ranked across underlyings, never across spreads. `src/validate.ts` is how the weights get checked, and it needs weeks of saved runs. If you change a component's definition, old runs in `runs/` stop being comparable.
+
+- `validate` judges a spread only by where the underlying was at the exit date (21 days before expiry). It does not reprice the options.
+- The same spread listed on many days is one trade, counted at its first listing.
+- Historical volatility from daily bars uses a calendar window (22 trading-day returns for "30 days"), which matches tastytrade's 30-day figure to about a point. It drifts more at 60 and 90 days when one jump sits in the window.
+
 ## Dates and time zones
 
 Earnings logic works on date strings (`YYYY-MM-DD`) so no zone enters it, but "today" must be the New York date: a UTC date is already tomorrow during the evening session. Pass it in; do not read the clock inside the logic (`pairSpreads` and the earnings functions take everything they need as arguments, which is what keeps the tests fixed).

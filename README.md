@@ -49,9 +49,46 @@ For each underlying that passes the earnings rule, per expiration in the DTE win
 | `earnings.minDaysSinceLast`, `earnings.minDaysUntilNext` | The earnings rule |
 | `strikeSelection` | Slack and margins for choosing which strikes to quote |
 
+## Using it
+
+```bash
+# credentials go in a file outside the repository (see "Credentials" below)
+node src/cli.ts scan --symbols SPY,QQQ,IWM,GLD        # or --symbols-file watchlist.txt
+node src/cli.ts validate                              # once runs are weeks old
+```
+
+`scan` prints what it dropped and why, then the best candidates (the best three per underlying by default), and writes the whole ranked result to `runs/`. A 45-symbol scan takes a few seconds with the chain listings cached.
+
+### Ranking
+
+Each candidate gets six component ranks and a weighted average of them (weights in `ranking.weights`):
+
+| Component | Level | Better when |
+|---|---|---|
+| `ivPercentile` | underlying | IV is high against its own year |
+| `ivOverHv` | underlying | IV is high against recent realised volatility (the average of the 30, 60 and 90-day figures) |
+| `returnOnRisk` | spread | the credit at the natural price is large against the money at risk |
+| `pop` | spread | the chance of profit, from the delta at the break-even, is high |
+| `legSpread` | spread | the worse leg's bid-ask is tight |
+| `distance` | spread | the short strike is far from the stock, in expected moves (weight 0 by default) |
+
+Underlying-level components are ranked across underlyings, so a name with forty spreads does not count forty times. **The weights are a first guess.** That is what `validate` is for: every run keeps its inputs, and once runs are a few weeks old it compares IV with the volatility that followed, and each score quintile with how its spreads held up at the exit date.
+
+### Credentials
+
+`~/.config/spread-scanner/credentials.env` (or `--credentials FILE`, or environment variables):
+
+```
+TT_CLIENT_SECRET=...
+TT_REFRESH_TOKEN=...
+FMP_API_KEY=...
+```
+
+Create a tastytrade OAuth client with the `read` scope only; the scanner never places orders.
+
 ## Status
 
-Early. Written and tested: the earnings rule, strike selection, spread pairing and the config loader. Still to come, in this order: the tastytrade and FMP providers and a command that lists unranked candidates; the ranking; a daily log of each run's inputs so the ranking can be checked against the volatility that followed; a browser report with filters and a theme picker.
+Early. Written and tested: the earnings rule, strike selection, spread pairing, the tastytrade and FMP providers, the scan, the ranking and the validation. Still to come: a browser report with filters and a theme picker, and scheduled runs.
 
 ## Development
 

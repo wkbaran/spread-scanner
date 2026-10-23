@@ -11,10 +11,18 @@ import { Fmp } from './providers/fmp.ts';
 import { Tastytrade } from './providers/tastytrade.ts';
 import { rankScan } from './rank.ts';
 import { scan } from './scan.ts';
+import { addDays, easternDate } from './dates.ts';
+import { formatValidation, validationReport } from './validate.ts';
+import type { DailyBar } from './providers/fmp.ts';
+import type { RankedScan } from './types.ts';
+import { readdirSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const USAGE = `Usage: node src/cli.ts scan (--symbols A,B,C | --symbols-file FILE) [options]
+const USAGE = `Usage:
+  node src/cli.ts scan (--symbols A,B,C | --symbols-file FILE) [options]
+  node src/cli.ts validate [--runs DIR] [--min-age-days N]
+    Checks the saved runs that are old enough against what the market did next.
 
   --symbols LIST        comma-separated underlyings
   --symbols-file FILE   one symbol per line (blank lines and # comments are skipped)
@@ -46,6 +54,29 @@ function writeAtomic(path: string, text: string): void {
   renameSync(temp, path);
 }
 
+async function validate(values: { runs?: string; credentials?: string; 'min-age-days'?: string }): Promise<number> {
+  const dir = values.runs ?? join(root, 'runs');
+  const today = easternDate(new Date());
+  const minAge = Number(values['min-age-days'] ?? 21);
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('-scan.json')).sort() : [];
+  const runs = files.map((f) => JSON.parse(readFileSync(join(dir, f), 'utf8')) as RankedScan).filter((r) => r.today <= addDays(today, -minAge));
+  if (runs.length === 0) {
+    process.stdout.write(`No saved run is ${minAge} days old yet (${files.length} saved in ${dir}). Keep scanning; this needs weeks of history.\n`);
+    return 0;
+  }
+  const credentials = loadCredentials(values.credentials);
+  const fmp = new Fmp(credentials.fmp.apiKey, new Http({ userAgent: 'spread-scanner/0.1', minIntervalMs: 250 }));
+  const cache = new FileCache(join(root, '.cache'));
+  const first = runs.map((r) => r.today).sort()[0] as string;
+  const symbols = [...new Set(runs.flatMap((r) => Object.keys(r.symbols)))];
+  const bars = new Map<string, DailyBar[]>();
+  for (const symbol of symbols) {
+    bars.set(symbol, await cache.getOrFetch(`fmp-bars-${symbol}-${first}-${today}`, 12 * 3_600_000, () => fmp.dailyBars(symbol, addDays(first, -5), today)));
+  }
+  process.stdout.write(`${formatValidation(validationReport(runs, bars, today))}\n`);
+  return 0;
+}
+
 async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -58,14 +89,17 @@ async function main(argv: string[]): Promise<number> {
       out: { type: 'string' },
       limit: { type: 'string' },
       'per-symbol': { type: 'string' },
+      runs: { type: 'string' },
+      'min-age-days': { type: 'string' },
       'no-cache': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
-  if (values.help === true || positionals[0] !== 'scan') {
+  if (values.help === true || (positionals[0] !== 'scan' && positionals[0] !== 'validate')) {
     process.stderr.write(USAGE);
     return values.help === true ? 0 : 2;
   }
+  if (positionals[0] === 'validate') return validate(values);
   const symbols = readSymbols(values.symbols, values['symbols-file']);
   if (symbols.length === 0) {
     process.stderr.write(`No symbols given.\n\n${USAGE}`);
