@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+dist/
+out/
+
+# Per-user settings and credentials. The committed config/default.json holds
+# generic values; your own thresholds go in config/local.json.
+config/local.json
+.env
+.env.*
+*.secret
+
+# Scanner output and the daily input log (market data, and what you were looking at)
+runs/
+*.jsonl
+logs/
+*.log
+
+# Tooling
+*.tsbuildinfo
+coverage/
+.vscode/
+.idea/
+.DS_Store

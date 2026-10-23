@@ -1,0 +1,9 @@
+{
+  "dte": { "min": 35, "max": 45 },
+  "delta": { "min": 0.15, "max": 0.25 },
+  "widths": [5],
+  "fallbackWidth": 10,
+  "maxLegSpreadPct": 20,
+  "earnings": { "minDaysSinceLast": 4, "minDaysUntilNext": 35 },
+  "strikeSelection": { "deltaSlack": 0.02, "nearMarginEM": 0.15, "farMarginEM": 0.35, "rate": 0.04 }
+}
