@@ -4,8 +4,9 @@ import type { Cache } from '../src/cache.ts';
 import { addDays, daysBetween } from '../src/dates.ts';
 import type { InstrumentFlags, ListedContract, OptionQuoteData, SymbolMetrics } from '../src/providers/tastytrade.ts';
 import { parseOcc } from '../src/providers/tastytrade.ts';
+import { rankScan } from '../src/rank.ts';
 import { scan, type FmpLike, type TastytradeLike } from '../src/scan.ts';
-import { summarize } from '../src/format.ts';
+import { summarize, topPerSymbol } from '../src/format.ts';
 import { blackScholes, occ } from './fakes.ts';
 import { config } from './fixtures.ts';
 
@@ -20,6 +21,7 @@ interface Fake {
   reportDate?: string | null;
   noMetrics?: boolean;
   noQuote?: boolean;
+  noHv?: boolean;
 }
 
 const market: Record<string, Fake> = {
@@ -32,6 +34,7 @@ const market: Record<string, Fake> = {
   NOIV: { iv: null },
   GHOST: { noMetrics: true },
   NOQUOTE: { reportDate: '2026-12-20', noQuote: true },
+  NOHV: { reportDate: '2026-12-20', noHv: true }, // tastytrade has no historical volatility for it
 };
 
 function build() {
@@ -45,7 +48,8 @@ function build() {
         const m = market[s];
         if (m === undefined || m.noMetrics === true) continue;
         out.set(s, {
-          symbol: s, ivIndex: m.iv === undefined ? 0.3 : m.iv, ivRank: 0.5, ivPercentile: 0.6, hv30: 0.2, hv60: 0.22, hv90: 0.25,
+          symbol: s, ivIndex: m.iv === undefined ? 0.3 : m.iv, ivRank: 0.5, ivPercentile: 0.6,
+          hv30: m.noHv === true ? null : 0.2, hv60: m.noHv === true ? null : 0.22, hv90: m.noHv === true ? null : 0.25,
           beta: 1, liquidityRating: 4, sector: 'Tech', reportDate: m.reportDate ?? null, reportTimeOfDay: 'AMC',
         });
       }
@@ -82,13 +86,25 @@ function build() {
     },
   };
   const calendarCalls: string[] = [];
+  const barCalls: string[] = [];
   const fmp: FmpLike = {
     async earningsCalendar(from, to) {
       calendarCalls.push(`${from}..${to}`);
       return from <= '2026-11-02' && '2026-11-02' <= to ? [{ symbol: 'BBB', date: '2026-11-02' }] : [];
     },
+    async dailyBars(symbol, from, to) {
+      barCalls.push(symbol);
+      // a market that alternates +1% and -1% every day: a known volatility
+      const bars: { date: string; close: number }[] = [];
+      let close = 100;
+      for (let d = from, i = 0; d <= to; d = addDays(d, 1), i++) {
+        close *= i % 2 === 0 ? 1.01 : 1 / 1.01;
+        bars.push({ date: d, close });
+      }
+      return bars;
+    },
   };
-  return { tt, fmp, log, calendarCalls };
+  return { tt, fmp, log, calendarCalls, barCalls };
 }
 
 class MemoryCache implements Cache {
@@ -107,7 +123,7 @@ test('the pipeline keeps the names that qualify and says why it dropped each of 
   assert.equal(result.schema, 'spread-scanner/scan@1');
   assert.equal(result.today, today);
   assert.equal(result.universe, Object.keys(market).length);
-  assert.deepEqual(Object.keys(result.symbols).sort(), ['AAA', 'FUND', 'JUST']);
+  assert.deepEqual(Object.keys(result.symbols).sort(), ['AAA', 'FUND', 'JUST', 'NOHV']);
   assert.deepEqual(dropped(result, 'no metrics from tastytrade'), ['GHOST']);
   assert.deepEqual(dropped(result, 'earnings: reports too soon'), ['BBB']);
   assert.deepEqual(dropped(result, 'earnings: reported too recently'), ['CCC']);
@@ -159,7 +175,7 @@ test('chain listings and calendar windows are cached, so a second scan fetches n
 
 test('when the calendar cannot be fetched, an unknown date fails but a fund still passes', async () => {
   const { tt } = build();
-  const broken: FmpLike = { earningsCalendar: async () => { throw new Error('boom'); } };
+  const broken: FmpLike = { earningsCalendar: async () => { throw new Error('boom'); }, dailyBars: async () => [] };
   const messages: string[] = [];
   const result = await scan(['AAA', 'FUND', 'JUST'], config(), { tt, fmp: broken, cache: new MemoryCache(), now, log: (m) => messages.push(m) });
   assert.deepEqual(Object.keys(result.symbols), ['FUND']);
@@ -178,7 +194,7 @@ test('duplicates and case are folded, and the text summary names the drops and l
   const { tt, fmp } = build();
   const result = await scan(['aaa', 'AAA', ' bbb '], config(), { tt, fmp, cache: new MemoryCache(), now });
   assert.equal(result.universe, 2);
-  const text = summarize(result, 5);
+  const text = summarize(rankScan(result, config().ranking.weights), 5);
   assert.match(text, /2 symbols on 2026-10-23/);
   assert.match(text, /earnings: reports too soon/);
   assert.match(text, /SYMBOL/);
@@ -190,4 +206,36 @@ test('a name quoted but with no spread says which stage failed', async () => {
   const wide: typeof tt = { ...tt, optionQuotes: async (occs) => new Map([...(await tt.optionQuotes(occs))].map(([k, q]) => [k, { ...q, bid: q.bid * 0.5 }] as const)) };
   const result = await scan(['AAA'], config(), { tt: wide, fmp, cache: new MemoryCache(), now });
   assert.equal(result.dropped[0]?.reason, 'no spread: short leg bid-ask too wide');
+});
+
+test('a name tastytrade has no historical volatility for gets it from daily bars, and the others keep tastytrade\'s', async () => {
+  const { tt, fmp, barCalls } = build();
+  const result = await scan(['AAA', 'NOHV'], config(), { tt, fmp, cache: new MemoryCache(), now });
+  assert.deepEqual(barCalls, ['NOHV'], 'bars are fetched only for the name that lacks the figures');
+  const own = result.symbols['NOHV'];
+  assert.equal(own?.hvSource, 'fmp bars');
+  // alternating +1% / -1% closes: every log return is +-0.00995, so the annual figure is 0.00995 x sqrt(252)
+  assert.ok(Math.abs((own?.hv30 ?? 0) - 0.158) < 0.01, `hv30 ${own?.hv30}`);
+  assert.equal(result.symbols['AAA']?.hvSource, 'tastytrade');
+  assert.equal(result.symbols['AAA']?.hv30, 0.2);
+});
+
+test('a failed bars fetch leaves the volatility missing and the name in', async () => {
+  const { tt, fmp } = build();
+  const flaky: FmpLike = { ...fmp, dailyBars: async () => { throw new Error('offline'); } };
+  const result = await scan(['NOHV'], config(), { tt, fmp: flaky, cache: new MemoryCache(), now });
+  assert.equal(result.symbols['NOHV']?.hv30, null);
+  assert.equal(result.symbols['NOHV']?.hvSource, null);
+  assert.ok(result.candidates.length > 0);
+});
+
+test('the printed list can be limited to the best few per underlying, in overall order', async () => {
+  const { tt, fmp } = build();
+  const ranked = rankScan(await scan(['AAA', 'JUST'], config(), { tt, fmp, cache: new MemoryCache(), now }), config().ranking.weights);
+  const top = topPerSymbol(ranked.candidates, 2);
+  assert.equal(top.filter((c) => c.symbol === 'AAA').length, 2);
+  assert.equal(top.filter((c) => c.symbol === 'JUST').length, 2);
+  assert.deepEqual(top.map((c) => c.score), [...top.map((c) => c.score)].sort((a, b) => b - a));
+  assert.equal(topPerSymbol(ranked.candidates, 0).length, ranked.candidates.length);
+  assert.ok(summarize(ranked, 100, 2).includes('best 2 per symbol'));
 });

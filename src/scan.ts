@@ -1,10 +1,11 @@
 import type { Cache } from './cache.ts';
-import { dateWindows, daysBetween, easternDate } from './dates.ts';
+import { addDays, dateWindows, daysBetween, easternDate } from './dates.ts';
 import { earningsVerdict, requiredCoverage } from './earnings.ts';
-import type { EarningsRow } from './providers/fmp.ts';
+import type { DailyBar, EarningsRow } from './providers/fmp.ts';
 import type { InstrumentFlags, ListedContract, OptionQuoteData, SymbolMetrics } from './providers/tastytrade.ts';
 import { pairSpreads, whyNoSpread } from './spread.ts';
 import { strikesToQuote } from './strikes.ts';
+import { historicalVolatility } from './volatility.ts';
 import type { Candidate, Dropped, Quote, ScanResult, ScannerConfig, Side, SymbolInfo } from './types.ts';
 
 export interface TastytradeLike {
@@ -17,6 +18,7 @@ export interface TastytradeLike {
 
 export interface FmpLike {
   earningsCalendar(from: string, to: string): Promise<EarningsRow[]>;
+  dailyBars(symbol: string, from: string, to: string): Promise<DailyBar[]>;
 }
 
 export interface ScanDeps {
@@ -32,6 +34,9 @@ const MAX_SIGMA = 3;
 const CALENDAR_WINDOW_DAYS = 3;
 const CALENDAR_TTL_MS = 12 * 3_600_000;
 const CHAIN_TTL_MS = 20 * 3_600_000;
+const BARS_TTL_MS = 12 * 3_600_000;
+/** Calendar days of bars wanted: the 90-day volatility window plus slack for weekends and holidays. */
+const BARS_DAYS = 130;
 const SIDES: Side[] = ['put', 'call'];
 
 /** Verdict reasons carry numbers; the dropped list groups them by what they mean. */
@@ -108,6 +113,7 @@ export async function scan(symbols: string[], cfg: ScannerConfig, deps: ScanDeps
       hv90: m.hv90,
       beta: m.beta,
       liquidityRating: m.liquidityRating,
+      hvSource: m.hv30 !== null && m.hv60 !== null && m.hv90 !== null ? 'tastytrade' : null,
       reportDate: m.reportDate,
       reportTimeOfDay: m.reportTimeOfDay,
       earnings: verdict,
@@ -175,6 +181,23 @@ export async function scan(symbols: string[], cfg: ScannerConfig, deps: ScanDeps
     }
     kept[symbol] = i;
     for (const spread of found) candidates.push({ symbol, spread });
+  }
+
+  // tastytrade has no historical volatility for about 45% of names. Fill the gap from daily bars,
+  // only for names that produced a spread, so the extra calls are few and cached for the day.
+  for (const symbol of Object.keys(kept)) {
+    const i = kept[symbol] as SymbolInfo;
+    if (i.hvSource === 'tastytrade') continue;
+    try {
+      const bars = await cache.getOrFetch(`fmp-bars-${symbol}-${today}`, BARS_TTL_MS, () => fmp.dailyBars(symbol, addDays(today, -BARS_DAYS), today));
+      const hv = { hv30: historicalVolatility(bars, 30), hv60: historicalVolatility(bars, 60), hv90: historicalVolatility(bars, 90) };
+      i.hv30 ??= hv.hv30;
+      i.hv60 ??= hv.hv60;
+      i.hv90 ??= hv.hv90;
+      i.hvSource = i.hv30 === null && i.hv60 === null && i.hv90 === null ? null : 'fmp bars';
+    } catch (error) {
+      log(`no price history for ${symbol} (${error instanceof Error ? error.message : 'error'})`);
+    }
   }
 
   const droppedList: Dropped[] = [...dropped].map(([reason, list]) => ({ reason, symbols: list.sort() })).sort((a, b) => b.symbols.length - a.symbols.length);

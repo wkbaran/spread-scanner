@@ -9,6 +9,7 @@ import { summarize } from './format.ts';
 import { Http } from './http.ts';
 import { Fmp } from './providers/fmp.ts';
 import { Tastytrade } from './providers/tastytrade.ts';
+import { rankScan } from './rank.ts';
 import { scan } from './scan.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,6 +22,7 @@ const USAGE = `Usage: node src/cli.ts scan (--symbols A,B,C | --symbols-file FIL
   --credentials FILE    KEY=value lines (default: ${DEFAULT_CREDENTIALS_PATH})
   --out DIR             where the result file goes (default: runs)
   --limit N             candidates to print (default: 40)
+  --per-symbol N        at most N printed per underlying, 0 for all (default: 3); the file keeps every candidate
   --no-cache            do not read or write .cache/
 `;
 
@@ -55,6 +57,7 @@ async function main(argv: string[]): Promise<number> {
       credentials: { type: 'string' },
       out: { type: 'string' },
       limit: { type: 'string' },
+      'per-symbol': { type: 'string' },
       'no-cache': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
@@ -79,12 +82,13 @@ async function main(argv: string[]): Promise<number> {
   const cache = values['no-cache'] === true ? noCache : new FileCache(join(root, '.cache'));
 
   const started = Date.now();
-  const result = await scan(symbols, cfg, { tt, fmp, cache, log: (message) => process.stderr.write(`${message}\n`) });
+  const scanned = await scan(symbols, cfg, { tt, fmp, cache, log: (message) => process.stderr.write(`${message}\n`) });
 
+  const result = rankScan(scanned, cfg.ranking.weights);
   const stamp = result.generatedAt.replace(/[:.]/g, '-').slice(0, 19);
   const file = join(values.out ?? join(root, 'runs'), `${stamp}-scan.json`);
   writeAtomic(file, JSON.stringify(result));
-  process.stdout.write(`${summarize(result, Number(values.limit ?? 40))}\n\nWrote ${file} (${((Date.now() - started) / 1000).toFixed(1)} s)\n`);
+  process.stdout.write(`${summarize(result, Number(values.limit ?? 40), Number(values['per-symbol'] ?? 3))}\n\nWrote ${file} (${((Date.now() - started) / 1000).toFixed(1)} s)\n`);
   return 0;
 }
 

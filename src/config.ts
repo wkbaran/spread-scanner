@@ -26,6 +26,8 @@ export function validateConfig(c: ScannerConfig): ScannerConfig {
   if (!(c.width.min > 0 && c.width.min <= c.width.max)) fail('width.min must be positive and no larger than width.max');
   if (!(c.maxLegSpreadPct > 0)) fail('maxLegSpreadPct must be positive');
   if (!(c.delta.min - c.strikeSelection.deltaSlack > 0)) fail('strikeSelection.deltaSlack must be smaller than delta.min');
+  const w = Object.values(c.ranking.weights);
+  if (w.some((x) => !(x >= 0)) || !(w.reduce((a, b) => a + b, 0) > 0)) fail('ranking.weights must be non-negative and not all zero');
   return c;
 }
 
