@@ -184,3 +184,10 @@ test('duplicates and case are folded, and the text summary names the drops and l
   assert.match(text, /SYMBOL/);
   assert.match(text, /more in the output file/);
 });
+
+test('a name quoted but with no spread says which stage failed', async () => {
+  const { tt, fmp } = build();
+  const wide: typeof tt = { ...tt, optionQuotes: async (occs) => new Map([...(await tt.optionQuotes(occs))].map(([k, q]) => [k, { ...q, bid: q.bid * 0.5 }] as const)) };
+  const result = await scan(['AAA'], config(), { tt: wide, fmp, cache: new MemoryCache(), now });
+  assert.equal(result.dropped[0]?.reason, 'no spread: short leg bid-ask too wide');
+});

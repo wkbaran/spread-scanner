@@ -78,12 +78,13 @@ async function main(argv: string[]): Promise<number> {
   const fmp = new Fmp(credentials.fmp.apiKey, new Http({ userAgent: 'spread-scanner/0.1', minIntervalMs: 250 }));
   const cache = values['no-cache'] === true ? noCache : new FileCache(join(root, '.cache'));
 
+  const started = Date.now();
   const result = await scan(symbols, cfg, { tt, fmp, cache, log: (message) => process.stderr.write(`${message}\n`) });
 
   const stamp = result.generatedAt.replace(/[:.]/g, '-').slice(0, 19);
   const file = join(values.out ?? join(root, 'runs'), `${stamp}-scan.json`);
   writeAtomic(file, JSON.stringify(result));
-  process.stdout.write(`${summarize(result, Number(values.limit ?? 40))}\n\nWrote ${file}\n`);
+  process.stdout.write(`${summarize(result, Number(values.limit ?? 40))}\n\nWrote ${file} (${((Date.now() - started) / 1000).toFixed(1)} s)\n`);
   return 0;
 }
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legSpreadPct, pairSpreads, spreadMetrics } from '../src/spread.ts';
+import { legSpreadPct, pairSpreads, spreadMetrics, whyNoSpread } from '../src/spread.ts';
 import { close, config, quote } from './fixtures.ts';
 
 test('the bid-ask percent is (ask - bid) over the mid, and OptionStrat\'s own formula gives the same', () => {
@@ -93,4 +93,17 @@ test('call spreads pair upward, and expirations are judged separately', () => {
 test('a long leg on the wrong side of the short is never paired', () => {
   const quotes = [quote('put', 90, 1.0, 1.1, -0.2), quote('put', 95, 2.0, 2.1, -0.3)];
   assert.equal(pairSpreads(quotes, 'put', spot, config()).length, 0);
+});
+
+test('why there is no spread: the furthest stage reached is named', () => {
+  const cfg = config();
+  assert.equal(whyNoSpread([], spot, cfg), 'no quotes in the DTE window');
+  assert.equal(whyNoSpread(chain().map((q) => ({ ...q, dte: 20 })), spot, cfg), 'no quotes in the DTE window');
+  assert.equal(whyNoSpread([quote('put', 95, 2.0, 2.1, -0.35), quote('put', 85, 0.45, 0.5, -0.11)], spot, cfg), 'no short leg at the target delta');
+  const wideShort = chain().map((q) => (q.strike === 90 ? { ...q, bid: 0.7, ask: 1.1 } : q));
+  assert.equal(whyNoSpread(wideShort, spot, cfg), 'short leg bid-ask too wide');
+  const noLongs = chain().filter((q) => q.strike === 90 || q.strike === 86);
+  assert.equal(whyNoSpread(noLongs, spot, cfg), 'no long leg in the width range with a usable bid-ask');
+  const noCredit = [quote('put', 90, 0.43, 0.47, -0.2), quote('put', 85, 1.0, 1.1, -0.11)];
+  assert.equal(whyNoSpread(noCredit, spot, cfg), 'no pair gives a credit');
 });

@@ -3,7 +3,7 @@ import { dateWindows, daysBetween, easternDate } from './dates.ts';
 import { earningsVerdict, requiredCoverage } from './earnings.ts';
 import type { EarningsRow } from './providers/fmp.ts';
 import type { InstrumentFlags, ListedContract, OptionQuoteData, SymbolMetrics } from './providers/tastytrade.ts';
-import { pairSpreads } from './spread.ts';
+import { pairSpreads, whyNoSpread } from './spread.ts';
 import { strikesToQuote } from './strikes.ts';
 import type { Candidate, Dropped, Quote, ScanResult, ScannerConfig, Side, SymbolInfo } from './types.ts';
 
@@ -170,7 +170,7 @@ export async function scan(symbols: string[], cfg: ScannerConfig, deps: ScanDeps
     const i = info.get(symbol) as SymbolInfo;
     const found = SIDES.flatMap((side) => pairSpreads(quotes.get(symbol) ?? [], side, i.spot, cfg));
     if (found.length === 0) {
-      drop('no spread passed the filters', symbol);
+      drop(`no spread: ${whyNoSpread(quotes.get(symbol) ?? [], i.spot, cfg)}`, symbol);
       continue;
     }
     kept[symbol] = i;

@@ -71,3 +71,29 @@ export function pairSpreads(quotes: Quote[], side: Side, spot: number, cfg: Scan
   }
   return out.sort((a, b) => a.expiration.localeCompare(b.expiration) || a.short.strike - b.short.strike || a.width - b.width);
 }
+
+/**
+ * Why a name with quotes produced no spread: the furthest stage any side reached. Distinguishes a
+ * rule doing its job (a weekly's options are too wide to use) from a gap in the data (no strike
+ * near the target delta was quoted), which "no spread passed the filters" would hide.
+ */
+export function whyNoSpread(quotes: Quote[], spot: number, cfg: ScannerConfig): string {
+  const inWindow = quotes.filter((q) => q.dte >= cfg.dte.min && q.dte <= cfg.dte.max);
+  if (inWindow.length === 0) return 'no quotes in the DTE window';
+  const { min, max } = cfg.width;
+  let stage = 1;
+  for (const side of ['put', 'call'] as const) {
+    const legs = inWindow.filter((q) => q.side === side);
+    const shorts = legs.filter((q) => isOtm(q, spot) && Math.abs(q.delta) >= cfg.delta.min && Math.abs(q.delta) <= cfg.delta.max);
+    if (shorts.length > 0) stage = Math.max(stage, 2);
+    for (const short of shorts.filter((q) => legUsable(q, cfg))) {
+      stage = Math.max(stage, 3);
+      const longs = legs.filter((l) => {
+        const width = side === 'put' ? short.strike - l.strike : l.strike - short.strike;
+        return l.expiration === short.expiration && width >= min && width <= max && legUsable(l, cfg);
+      });
+      if (longs.length > 0) stage = Math.max(stage, 4);
+    }
+  }
+  return ['', 'no short leg at the target delta', 'short leg bid-ask too wide', 'no long leg in the width range with a usable bid-ask', 'no pair gives a credit'][stage] as string;
+}
