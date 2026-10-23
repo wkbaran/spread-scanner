@@ -47,40 +47,27 @@ export function spreadMetrics(short: Quote, long: Quote): Spread | null {
   };
 }
 
-function pairAtWidths(legs: Quote[], side: Side, spot: number, cfg: ScannerConfig, widths: number[]): Spread[] {
+/**
+ * Credit spreads for one side of one chain. A short leg needs an absolute delta in range and a
+ * usable bid-ask; so does its long leg. Every usable long leg a permitted width past the short is
+ * paired with it, so one short strike can yield several spreads. Choosing among widths is left to
+ * whoever reads the result: the report filters by width.
+ */
+export function pairSpreads(quotes: Quote[], side: Side, spot: number, cfg: ScannerConfig): Spread[] {
+  const { min, max } = cfg.width;
+  const legs = quotes.filter((q) => q.side === side && q.dte >= cfg.dte.min && q.dte <= cfg.dte.max);
   const out: Spread[] = [];
   for (const short of legs) {
     const delta = Math.abs(short.delta);
     if (!isOtm(short, spot) || delta < cfg.delta.min || delta > cfg.delta.max) continue;
     if (!legUsable(short, cfg)) continue;
-    for (const w of widths) {
-      const target = side === 'put' ? short.strike - w : short.strike + w;
-      const long = legs.find((l) => l.strike === target && legUsable(l, cfg));
-      const spread = long === undefined ? null : spreadMetrics(short, long);
-      if (spread !== null) {
-        out.push(spread);
-        break; // the first width in the list that works is the one used for this short strike
-      }
+    for (const long of legs) {
+      if (long.expiration !== short.expiration || !legUsable(long, cfg)) continue;
+      const width = side === 'put' ? short.strike - long.strike : long.strike - short.strike;
+      if (width < min || width > max) continue;
+      const spread = spreadMetrics(short, long);
+      if (spread !== null) out.push(spread);
     }
   }
-  return out;
-}
-
-/**
- * Credit spreads for one side of one chain. A short leg needs an absolute delta in range and a
- * usable bid-ask; so does its long leg. Per expiration, the widths are tried in order for each
- * short strike, and the fallback width is used only if no spread at all came out of them.
- */
-export function pairSpreads(quotes: Quote[], side: Side, spot: number, cfg: ScannerConfig): Spread[] {
-  const inWindow = quotes.filter((q) => q.side === side && q.dte >= cfg.dte.min && q.dte <= cfg.dte.max);
-  const out: Spread[] = [];
-  for (const expiration of new Set(inWindow.map((q) => q.expiration))) {
-    const legs = inWindow.filter((q) => q.expiration === expiration);
-    let found = pairAtWidths(legs, side, spot, cfg, cfg.widths);
-    if (found.length === 0 && cfg.fallbackWidth !== null) {
-      found = pairAtWidths(legs, side, spot, cfg, [cfg.fallbackWidth]);
-    }
-    out.push(...found);
-  }
-  return out;
+  return out.sort((a, b) => a.expiration.localeCompare(b.expiration) || a.short.strike - b.short.strike || a.width - b.width);
 }

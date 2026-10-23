@@ -48,46 +48,49 @@ test('a pair that is not a credit at the mid is dropped', () => {
 const spot = 100;
 const chain = () => [
   quote('put', 90, 1.0, 1.1, -0.2),
-  quote('put', 85, 0.45, 0.5, -0.11),
-  quote('put', 84, 0.38, 0.42, -0.09),
-  quote('put', 80, 0.2, 0.24, -0.05),
+  quote('put', 86, 0.5, 0.55, -0.12), // width 4: too narrow
+  quote('put', 85, 0.45, 0.5, -0.11), // width 5
+  quote('put', 84, 0.38, 0.42, -0.09), // width 6
+  quote('put', 82, 0.3, 0.33, -0.07), // width 8
+  quote('put', 80, 0.2, 0.24, -0.05), // width 10
+  quote('put', 79, 0.15, 0.18, -0.04), // width 11: too wide
 ];
 
-test('the first width in the list that works is used', () => {
+test('every usable long leg from the minimum to the maximum width becomes a spread', () => {
   const found = pairSpreads(chain(), 'put', spot, config());
-  assert.equal(found.length, 1);
-  assert.equal(found[0]?.short.strike, 90);
-  assert.equal(found[0]?.width, 5);
+  assert.deepEqual(found.map((s) => s.width), [5, 6, 8, 10]);
+  assert.ok(found.every((s) => s.short.strike === 90));
 });
 
-test('a long leg with too wide a bid-ask is skipped for the next width', () => {
+test('the width bounds are inclusive and come from the config', () => {
+  assert.deepEqual(pairSpreads(chain(), 'put', spot, config({ width: { min: 6, max: 8 } })).map((s) => s.width), [6, 8]);
+  assert.deepEqual(pairSpreads(chain(), 'put', spot, config({ width: { min: 5, max: 5 } })).map((s) => s.width), [5]);
+});
+
+test('a long leg with too wide a bid-ask is skipped, the other widths remain', () => {
   const quotes = chain().map((q) => (q.strike === 85 ? { ...q, bid: 0.1, ask: 0.3 } : q));
-  const found = pairSpreads(quotes, 'put', spot, config());
-  assert.equal(found[0]?.width, 6);
-});
-
-test('the fallback width is used only when no spread at the other widths exists', () => {
-  const onlyTen = chain().filter((q) => q.strike !== 85 && q.strike !== 84);
-  const found = pairSpreads(onlyTen, 'put', spot, config());
-  assert.equal(found.length, 1);
-  assert.equal(found[0]?.width, 10);
-  const withFive = pairSpreads(chain(), 'put', spot, config());
-  assert.ok(withFive.every((s) => s.width !== 10));
-  assert.equal(pairSpreads(onlyTen, 'put', spot, config({ fallbackWidth: null })).length, 0);
+  assert.deepEqual(pairSpreads(quotes, 'put', spot, config()).map((s) => s.width), [6, 8, 10]);
 });
 
 test('a short leg must be out of the money, in the delta range, in the DTE window and tight enough', () => {
   const cfg = config();
   const base = chain();
   assert.equal(pairSpreads([quote('put', 105, 6.0, 6.1, -0.2), quote('put', 100, 3.0, 3.1, -0.1)], 'put', spot, cfg).length, 0, 'in the money');
-  assert.equal(pairSpreads([quote('put', 95, 2.0, 2.1, -0.35), ...base.slice(1)], 'put', spot, cfg).length, 0, 'delta too high');
+  assert.equal(pairSpreads([quote('put', 95, 2.0, 2.1, -0.35), ...base.slice(2)], 'put', spot, cfg).length, 0, 'delta too high');
   assert.equal(pairSpreads(base.map((q) => ({ ...q, dte: 20 })), 'put', spot, cfg).length, 0, 'inside the DTE window');
   const wide = base.map((q) => (q.strike === 90 ? { ...q, bid: 0.7, ask: 1.1 } : q));
   assert.equal(pairSpreads(wide, 'put', spot, cfg).length, 0, 'short leg bid-ask over 20%');
 });
 
-test('expirations are judged separately', () => {
+test('call spreads pair upward, and expirations are judged separately', () => {
+  const calls = [quote('call', 110, 1.0, 1.1, 0.2), quote('call', 115, 0.45, 0.5, 0.11), quote('call', 120, 0.2, 0.24, 0.05)];
+  assert.deepEqual(pairSpreads(calls, 'call', spot, config()).map((s) => s.width), [5, 10]);
   const later = chain().map((q) => ({ ...q, expiration: '2026-12-11', dte: 44 }));
   const found = pairSpreads([...chain(), ...later], 'put', spot, config());
-  assert.deepEqual(found.map((s) => s.expiration).sort(), ['2026-12-04', '2026-12-11']);
+  assert.deepEqual([...new Set(found.map((s) => s.expiration))], ['2026-12-04', '2026-12-11']);
+});
+
+test('a long leg on the wrong side of the short is never paired', () => {
+  const quotes = [quote('put', 90, 1.0, 1.1, -0.2), quote('put', 95, 2.0, 2.1, -0.3)];
+  assert.equal(pairSpreads(quotes, 'put', spot, config()).length, 0);
 });

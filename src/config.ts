@@ -23,8 +23,7 @@ export function validateConfig(c: ScannerConfig): ScannerConfig {
   if (!(c.delta.min > 0 && c.delta.min <= c.delta.max && c.delta.max < 0.5)) {
     fail('delta needs 0 < min <= max < 0.5, as absolute values');
   }
-  if (c.widths.length === 0 || c.widths.some((w) => !(w > 0))) fail('widths must be a non-empty list of positive numbers');
-  if (c.fallbackWidth !== null && !(c.fallbackWidth > 0)) fail('fallbackWidth must be positive or null');
+  if (!(c.width.min > 0 && c.width.min <= c.width.max)) fail('width.min must be positive and no larger than width.max');
   if (!(c.maxLegSpreadPct > 0)) fail('maxLegSpreadPct must be positive');
   if (!(c.delta.min - c.strikeSelection.deltaSlack > 0)) fail('strikeSelection.deltaSlack must be smaller than delta.min');
   return c;

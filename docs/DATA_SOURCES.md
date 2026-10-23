@@ -36,6 +36,6 @@ Verified 2026-10-23 against live responses, with a read-only OAuth client. Re-ch
 
 ## Choosing strikes without a delta filter
 
-Quote only the strikes a short leg could have. For the delta range, take the strike at each edge from the spot and the IV index (`strikeAtDelta`), pad by a fraction of an expected move for skew, then add the strike each possible width away. **The band must reach past the short strike by the widest width**: the first version missed every long leg on a $66 stock.
+Quote only the strikes a short leg could have. For the delta range, take the strike at each edge from the spot and the IV index (`strikeAtDelta`), pad by a fraction of an expected move for skew, then add every listed strike a permitted width past those. **The band must reach past the short strike by the widest width**: the first version missed every long leg on a $66 stock.
 
 Measured on ten names, one expiry: every short the broad pull (spot plus or minus 1.7 expected moves, plus or minus $10) found was found again, with 22 contracts a symbol instead of 74, which is four symbols to a 100-symbol call.

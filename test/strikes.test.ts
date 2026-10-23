@@ -68,12 +68,13 @@ test('strikes to quote: a few short strikes plus the legs a width away, nothing 
   assert.ok(Math.min(...calls) > input.spot, 'no call at or below the money');
 });
 
-test('without a fallback width fewer strikes are requested', () => {
+test('a wider width range quotes more strikes', () => {
   const input = { spot: 200, sigma: 0.4, years: 40 / 365, rate: 0.04 };
   const grid = Array.from({ length: 80 }, (_, i) => 120 + i * 2.5);
-  const withFallback = strikesToQuote(grid, input, 'put', config());
-  const without = strikesToQuote(grid, input, 'put', config({ fallbackWidth: null }));
-  assert.ok(without.length < withFallback.length);
+  const narrow = strikesToQuote(grid, input, 'put', config({ width: { min: 5, max: 5 } }));
+  const wide = strikesToQuote(grid, input, 'put', config({ width: { min: 5, max: 10 } }));
+  assert.ok(wide.length > narrow.length);
+  assert.ok(narrow.every((k) => wide.includes(k)));
 });
 
 test('an expected move is spot x sigma x sqrt(years)', () => {

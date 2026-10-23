@@ -62,21 +62,19 @@ export function shortStrikeBand(input: StrikeInput, side: Side, cfg: ScannerConf
 }
 
 /**
- * The strikes to quote for one side of one expiration: every strike in the short band, plus the
- * strike each possible width away from it, where the chain lists one. `grid` is the expiration's
- * strikes from the chain listing.
+ * The strikes to quote for one side of one expiration: every strike in the short band, plus every
+ * listed strike a permitted width past it. `grid` is the expiration's strikes from the chain listing.
  */
 export function strikesToQuote(grid: number[], input: StrikeInput, side: Side, cfg: ScannerConfig): number[] {
   const { low, high } = shortStrikeBand(input, side, cfg);
-  const known = new Set(grid);
-  const widths = cfg.fallbackWidth === null ? cfg.widths : [...cfg.widths, cfg.fallbackWidth];
+  const { min, max } = cfg.width;
   const wanted = new Set<number>();
   for (const strike of grid) {
     if (strike < low || strike > high) continue;
     wanted.add(strike);
-    for (const w of widths) {
-      const far = side === 'put' ? strike - w : strike + w;
-      if (known.has(far)) wanted.add(far);
+    for (const far of grid) {
+      const w = side === 'put' ? strike - far : far - strike;
+      if (w >= min && w <= max) wanted.add(far);
     }
   }
   return [...wanted].sort((x, y) => x - y);

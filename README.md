@@ -1,10 +1,31 @@
-# spread-scanner
+<div align="center">
 
-Ranks credit-spread candidates (bull put and bear call) from live option data: which spreads are worth opening, and how likely the options are to be overpriced.
+# Spread Scanner
 
-**Status: early.** The selection and scoring logic is written and tested. The data providers (tastytrade, FMP), the ranking and the command line are not. See [What is not here yet](#what-is-not-here-yet).
+**Which credit spreads are worth opening today, and how likely are their options to be overpriced?**
 
-It needs no Schwab account. Option quotes, greeks, open interest, IV rank and earnings dates come from tastytrade's API; daily price history and a second source of earnings dates come from FMP. Why that works, and what each source can and cannot do, is in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
+Scans a watchlist for bull put and bear call spreads, drops the names that are about to report earnings, keeps the options that trade tightly, and ranks what is left by how rich implied volatility is against what the stock actually does.
+
+![Node 26+](https://img.shields.io/badge/node-26%2B-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-native-3178C6?logo=typescript&logoColor=white)
+![No runtime dependencies](https://img.shields.io/badge/dependencies-0-informational)
+![Data: tastytrade + FMP](https://img.shields.io/badge/data-tastytrade%20%2B%20FMP-00A0DF)
+![Status: early](https://img.shields.io/badge/status-early-lightgrey)
+
+[What it uses](#what-it-uses) · [How it picks spreads](#how-it-picks-spreads) · [Configuration](#configuration) · [Status](#status) · [Development](#development) · [Data sources](docs/DATA_SOURCES.md)
+
+</div>
+
+## What it uses
+
+| What | Service | Needed? |
+|---|---|---|
+| Runtime | Node.js 26, which runs the TypeScript directly | Yes |
+| IV rank and percentile, option chains, quotes, greeks, open interest, next earnings date | [tastytrade API](https://developer.tastytrade.com/) (OAuth, read-only scope; real-time data needs a funded account) | Yes |
+| Earnings dates, daily price history | [Financial Modeling Prep](https://site.financialmodelingprep.com/) (the free tier is 250 calls a day) | Yes |
+| Type checking | `typescript`, a dev dependency | Only for `npm run typecheck` |
+
+There is no Schwab dependency. [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) has what each source returns, its limits, and the traps in the data.
 
 ## How it picks spreads
 
@@ -12,7 +33,7 @@ For each underlying that passes the earnings rule, per expiration in the DTE win
 
 1. **Earnings** (`src/earnings.ts`). The last report at least `minDaysSinceLast` days ago and the next at least `minDaysUntilNext` away. An unknown date fails. When sources disagree the nearer next date wins.
 2. **Which contracts to quote** (`src/strikes.ts`). Neither broker filters a chain by delta, so the delta range is turned into a strike range from the spot and the IV index, and only those contracts (about 22 a symbol, against 74 for a broad pull) are requested.
-3. **Pairing** (`src/spread.ts`). A short leg needs an absolute delta in `delta.min..delta.max`, must be out of the money, and every leg used must have a bid-ask within `maxLegSpreadPct` of its mid. The long leg is the first of `widths` that exists and passes. `fallbackWidth` is used for an expiration only when none of `widths` produced a spread.
+3. **Pairing** (`src/spread.ts`). A short leg needs an absolute delta in `delta.min..delta.max`, must be out of the money, and every leg used must have a bid-ask within `maxLegSpreadPct` of its mid. Every usable long leg between `width.min` and `width.max` dollars past it is a candidate, so one short strike can give several spreads. The report filters by width.
 4. **Odds and cost.** Credit at the mid and at the natural price, max risk, return on risk, and a chance of profit read from the delta at the break-even (not `1 - |delta| + credit / width`, which counts the credit twice).
 
 ## Configuration
@@ -23,17 +44,14 @@ For each underlying that passes the earnings rule, per expiration in the DTE win
 |---|---|
 | `dte.min`, `dte.max` | Days-to-expiration window |
 | `delta.min`, `delta.max` | Absolute delta of the short leg |
-| `widths` | Spread widths in dollars, tried in order |
-| `fallbackWidth` | Used only when none of `widths` gives a spread; `null` turns it off |
+| `width.min`, `width.max` | Spread widths in dollars; every available width in the range is a candidate |
 | `maxLegSpreadPct` | Largest (ask - bid) / mid, in percent, for any option used |
 | `earnings.minDaysSinceLast`, `earnings.minDaysUntilNext` | The earnings rule |
 | `strikeSelection` | Slack and margins for choosing which strikes to quote |
 
-## What is not here yet
+## Status
 
-- Providers: tastytrade (OAuth, metrics, chain listing, quotes) and FMP (earnings calendar, daily bars).
-- The ranking. The inputs are chosen (IV against realised volatility, IV percentile as context, the leg and slippage numbers above) but the formula is not.
-- A command line, and a daily log of each run's inputs so a ranking can be checked against the volatility that followed.
+Early. Written and tested: the earnings rule, strike selection, spread pairing and the config loader. Still to come, in this order: the tastytrade and FMP providers and a command that lists unranked candidates; the ranking; a daily log of each run's inputs so the ranking can be checked against the volatility that followed; a browser report with filters and a theme picker.
 
 ## Development
 
@@ -47,4 +65,6 @@ npm run typecheck   # tsc, noEmit
 
 Related: spread-book, a separate project, manages spreads once they are open. This project finds them.
 
-Nothing here is investment advice.
+## Disclaimer
+
+Nothing here is investment advice. Option data can be stale or wrong; check a trade with your broker before acting on it.

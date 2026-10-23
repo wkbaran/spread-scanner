@@ -43,10 +43,8 @@ export interface Spread {
 export interface ScannerConfig {
   dte: { min: number; max: number };
   delta: { min: number; max: number };
-  /** Spread widths tried in this order. */
-  widths: number[];
-  /** Used for an expiration only when none of `widths` produced a spread. Null disables it. */
-  fallbackWidth: number | null;
+  /** Every long leg whose strike is between `min` and `max` dollars past the short is a candidate. */
+  width: { min: number; max: number };
   /** An option whose (ask - bid) / mid is over this percent is not used, short leg or long. */
   maxLegSpreadPct: number;
   earnings: { minDaysSinceLast: number; minDaysUntilNext: number };

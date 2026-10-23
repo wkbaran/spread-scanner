@@ -5,8 +5,7 @@ export function config(overrides: Partial<ScannerConfig> = {}): ScannerConfig {
   return {
     dte: { min: 37, max: 45 },
     delta: { min: 0.15, max: 0.25 },
-    widths: [5, 6, 7],
-    fallbackWidth: 10,
+    width: { min: 5, max: 10 },
     maxLegSpreadPct: 20,
     earnings: { minDaysSinceLast: 4, minDaysUntilNext: 37 },
     strikeSelection: { deltaSlack: 0.02, nearMarginEM: 0.15, farMarginEM: 0.35, rate: 0.04 },
