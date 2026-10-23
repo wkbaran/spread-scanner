@@ -12,7 +12,9 @@ Scans a watchlist for bull put and bear call spreads, drops the names that are a
 ![Data: tastytrade + FMP](https://img.shields.io/badge/data-tastytrade%20%2B%20FMP-00A0DF)
 ![Status: early](https://img.shields.io/badge/status-early-lightgrey)
 
-[What it uses](#what-it-uses) · [How it picks spreads](#how-it-picks-spreads) · [Configuration](#configuration) · [Status](#status) · [Development](#development) · [Data sources](docs/DATA_SOURCES.md)
+[What it uses](#what-it-uses) · [How it picks spreads](#how-it-picks-spreads) · [Using it](#using-it) · [The report](#the-report) · [Configuration](#configuration) · [Status](#status) · [Data sources](docs/DATA_SOURCES.md)
+
+<img src="docs/screenshots/overview.png" alt="The Spread scanner report: the ranked spreads with a strike ruler on each row, one row opened to show its legs, its underlying and why it scores what it does" width="900">
 
 </div>
 
@@ -59,6 +61,21 @@ node src/cli.ts validate                              # once runs are weeks old
 
 `scan` prints what it dropped and why, then the best candidates (the best three per underlying by default), and writes the whole ranked result to `runs/`. A 45-symbol scan takes a few seconds with the chain listings cached.
 
+### The report
+
+```bash
+node src/cli.ts report        # the latest scan in runs/ -> report/index.html
+```
+
+One self-contained page: open `report/index.html` straight from disk, no server. The scan is embedded in it.
+
+- **Every row has a strike ruler.** The line is the stock, the shaded band is one expected move either side of it (the stock's IV over the days left), and the bar runs from the short strike to the long strike. Puts sit left of the stock and calls right, on one shared scale, so rows compare at a glance.
+- **Filters** for side, spread width (a chip for each width the scan found), expiration, stocks or funds, and minimums or maximums on return, chance of profit, IV percentile, IV over realised vol, slippage and the widest bid-ask. The list shows the best three of each symbol unless you ask for more.
+- **Weight sliders** re-rank the list as you move them. Open a row to see its legs, the underlying's figures and how each component ranked.
+- **A palette picker and a Light/Dark button**, the same control as equity-watch's.
+
+The page works down to a 320px phone: columns drop out by the room the table has, and the opened row carries what the table drops.
+
 ### Ranking
 
 Each candidate gets six component ranks and a weighted average of them (weights in `ranking.weights`):
@@ -88,7 +105,7 @@ Create a tastytrade OAuth client with the `read` scope only; the scanner never p
 
 ## Status
 
-Early. Written and tested: the earnings rule, strike selection, spread pairing, the tastytrade and FMP providers, the scan, the ranking and the validation. Still to come: a browser report with filters and a theme picker, and scheduled runs.
+Early. Written and tested: the earnings rule, strike selection, spread pairing, the tastytrade and FMP providers, the scan, the ranking, the validation and the browser report. Still to come: scheduled runs, so the log of inputs that `validate` needs builds up by itself.
 
 ## Development
 

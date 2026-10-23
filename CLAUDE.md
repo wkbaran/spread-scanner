@@ -37,6 +37,17 @@ This started as part of a Schwab scanner and the Schwab login is the reason it i
 - The same spread listed on many days is one trade, counted at its first listing.
 - Historical volatility from daily bars uses a calendar window (22 trading-day returns for "30 days"), which matches tastytrade's 30-day figure to about a point. It drifts more at 60 and 90 days when one jump sits in the window.
 
+## The report page (web/)
+
+Plain files, no bundler and no framework, so it opens from a `file://` URL. `model.js` has no DOM in it and is a classic script (not a module: Chrome blocks module scripts on `file://`); `test/web.test.ts` runs it in `node:vm` and checks its scoring against `src/rank.ts` over random inputs. Change one copy of the scoring and that test fails until you change the other.
+
+- **The scan is embedded in index.html** by `renderReport` (`src/report.ts`). It escapes `<` and the two Unicode line separators: a `</script>` inside a symbol's data would otherwise end the data tag. Do not replace that with a plain `JSON.stringify`.
+- **Columns drop out by the table's own width, with container queries on `.table-wrap`, not by the window's width.** The rail is a fixed 17.5rem, so a window width says little about the room the table has: a media query tuned at 1440px clipped the score column at 1360px. The thresholds (1150px, 890px, 700px) are the measured widths of the columns; re-measure if you add one.
+- **The opened row must never widen the table.** `.detail-grid` has `contain: inline-size`, `width: 100%` and `minmax(0, 1fr)` columns. Without them the legs table pushed the score column off a phone.
+- **Palette and theme are equity-watch's, copied.** `web/palette.js` is that file with one line changed (the storage key). The three-colour system (`--p-ground`, `--p-ink`, `--p-signal`, light mode swaps ground and ink) is why every colour in `index.html` is a `color-mix` of those three; add a colour that way, never as a hex.
+- **The rail footer is sticky and holds the swatch's place** (the swatch is `position: fixed` at the lower left). Without it the swatch floats over the last filter.
+- **Check layout changes in a real browser at 320, 390, 1000, 1360 and 1520px**, with a row opened. Every width bug found so far was invisible at the width it was written at.
+
 ## Dates and time zones
 
 Earnings logic works on date strings (`YYYY-MM-DD`) so no zone enters it, but "today" must be the New York date: a UTC date is already tomorrow during the evening session. Pass it in; do not read the clock inside the logic (`pairSpreads` and the earnings functions take everything they need as arguments, which is what keeps the tests fixed).

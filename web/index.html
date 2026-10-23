@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-palette="#0e2a31,#ece4d0,#f3a83b">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spread scanner</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='10' y='46' width='80' height='8' fill='%23f3a83b'/><rect x='24' y='30' width='10' height='40' fill='%23f3a83b'/><rect x='66' y='30' width='10' height='40' fill='%23f3a83b'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
+<script>
+  try { if (localStorage.getItem("spread-scanner.theme") === "light") document.documentElement.setAttribute("data-theme", "light"); } catch (e) {}
+</script>
+<script src="palette.js"></script>
+<style>
+  /*
+   * A working surface for one person choosing which spreads to open.
+   *
+   * The colour system is equity-watch's: three inputs (palette.js sets --p-ground,
+   * --p-ink, --p-signal) and everything else mixed from them. Light mode swaps ground
+   * and ink. The signal is spent on one thing: the score, which is what the page ranks.
+   * Everything else stays in ink so the ranking is the only thing that glows.
+   *
+   * The memorable element is the strike ruler in each row: the stock, its one-expected-move
+   * band, and the bar between the short and the long strike, all on one shared scale.
+   */
+  :root {
+    --ground: var(--p-ground);
+    --ink: var(--p-ink);
+    --signal: var(--p-signal);
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --ground: var(--p-ink);
+    --ink: var(--p-ground);
+    --signal: color-mix(in oklab, var(--p-signal) 72%, var(--p-ground));
+    color-scheme: light;
+  }
+  :root {
+    --surface: color-mix(in oklab, var(--ink) 5%, var(--ground));
+    --raised: color-mix(in oklab, var(--ink) 9%, var(--ground));
+    --line: color-mix(in oklab, var(--ink) 15%, var(--ground));
+    --line-strong: color-mix(in oklab, var(--ink) 28%, var(--ground));
+    --muted: color-mix(in oklab, var(--ink) 50%, var(--ground));
+    --sub: color-mix(in oklab, var(--ink) 72%, var(--ground));
+    --wash: color-mix(in oklab, var(--signal) 13%, var(--ground));
+    --on-signal: var(--ground);
+    --radius-s: 4px;
+    --radius-m: 10px;
+    --rail: 17.5rem;
+    --shadow: 0 18px 48px color-mix(in oklab, black 45%, transparent);
+    --narrow: 'Archivo', system-ui, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { font-size: 15px; }
+  body {
+    margin: 0; min-height: 100vh;
+    background: var(--ground); color: var(--ink);
+    font-family: 'Archivo', system-ui, sans-serif; font-stretch: 100%;
+    line-height: 1.5; font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--ink); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--signal); }
+  :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  button {
+    font: inherit; font-size: 0.82rem; font-weight: 500; color: var(--ink);
+    background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-s);
+    padding: 0.32rem 0.75rem; cursor: pointer;
+  }
+  button:hover { border-color: var(--line-strong); background: color-mix(in oklab, var(--ink) 13%, var(--ground)); }
+  input[type="search"], input[type="number"], select {
+    font: inherit; font-size: 0.88rem; color: var(--ink); background: var(--ground);
+    border: 1px solid var(--line-strong); border-radius: var(--radius-s); padding: 0.32rem 0.5rem; min-width: 0;
+  }
+  input::placeholder { color: var(--muted); }
+  .muted { color: var(--muted); }
+  .note { color: var(--muted); font-size: 0.8rem; }
+
+  /* ---- the rail: the scan's counts, then the controls ------------------ */
+  .shell { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); min-height: 100vh; }
+  .rail {
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 1.25rem;
+    padding: 1.4rem 1.4rem 0; background: var(--surface); border-right: 1px solid var(--line);
+  }
+  .site-title {
+    margin: 0; font-size: 1rem; font-weight: 800; font-stretch: 125%; letter-spacing: 0.01em;
+    display: flex; align-items: center; gap: 0.55rem;
+  }
+  /* The mark: two strikes and the bar between them. */
+  .site-title::before {
+    content: ""; width: 1.4rem; height: 0.9rem; flex: none;
+    background:
+      linear-gradient(var(--signal), var(--signal)) 12% 50% / 2px 100% no-repeat,
+      linear-gradient(var(--signal), var(--signal)) 88% 50% / 2px 100% no-repeat,
+      linear-gradient(var(--signal), var(--signal)) center / 76% 3px no-repeat;
+  }
+  .scan-meta { margin: -0.6rem 0 0; font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+  .scan-meta.stale { color: var(--signal); }
+  /* The counts are the biggest thing in the rail, set condensed and light as in equity-watch. */
+  .counts { margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+  .counts div { display: flex; flex-direction: column-reverse; }
+  .counts dt { font-size: 0.78rem; color: var(--muted); line-height: 1.2; }
+  .counts dd { margin: 0; font-family: var(--narrow); font-stretch: 62%; font-weight: 250; font-size: 2.6rem; line-height: 1; color: var(--ink); letter-spacing: -0.01em; }
+  .counts dd.of { color: var(--sub); }
+
+  .controls { display: flex; flex-direction: column; gap: 1.15rem; }
+  .controls > summary { display: none; cursor: pointer; font-weight: 600; font-stretch: 90%; padding: 0.2rem 0; }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 0.45rem; }
+  legend { padding: 0; margin: 0 0 0.35rem; font-weight: 650; font-stretch: 88%; font-size: 0.92rem; }
+  .row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .row label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; color: var(--sub); }
+  .limits { display: grid; grid-template-columns: 1fr 4rem; align-items: center; gap: 0.35rem 0.6rem; font-size: 0.86rem; color: var(--sub); }
+  .limits input { width: 100%; text-align: right; padding: 0.22rem 0.45rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .chip { position: relative; }
+  .chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .chip span { display: block; min-width: 2.2rem; text-align: center; padding: 0.22rem 0.5rem; border: 1px solid var(--line-strong); border-radius: var(--radius-s); font-size: 0.85rem; color: var(--sub); background: var(--ground); }
+  .chip input:checked + span { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+  .chip input:focus-visible + span { outline: 2px solid var(--signal); outline-offset: 2px; }
+  .weight { display: grid; grid-template-columns: 1fr 2.6rem; align-items: baseline; gap: 0.1rem 0.5rem; font-size: 0.86rem; color: var(--sub); }
+  .weight output { text-align: right; color: var(--ink); }
+  .weight input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--signal); margin: 0 0 0.35rem; }
+  .spacer { flex: 1; min-height: 1rem; }
+  /* A strip that stays at the bottom of the rail: the palette swatch (fixed, below) sits at its left
+     and the Light/Dark button beside it, so neither floats over a control. */
+  .rail-foot {
+    position: sticky; bottom: 0; z-index: 3; margin: 0 -1.4rem; padding: 0.85rem 1.4rem 1rem 4.6rem;
+    display: flex; align-items: center; gap: 0.6rem; background: var(--surface); border-top: 1px solid var(--line);
+  }
+
+  /* ---- the list --------------------------------------------------------- */
+  main { padding: 1.6rem 2rem 6rem; min-width: 0; }
+  .summary { margin: 0 0 1rem; max-width: 62ch; color: var(--sub); }
+  .summary strong { color: var(--ink); font-weight: 650; }
+  .key { margin: -0.5rem 0 1rem; max-width: 70ch; }
+  .table-wrap { overflow-x: clip; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  thead th {
+    position: sticky; top: 0; z-index: 2; background: var(--ground);
+    text-align: right; font-weight: 500; font-size: 0.8rem; color: var(--muted); padding: 0.5rem 0.55rem;
+    border-bottom: 1px solid var(--line-strong); white-space: nowrap;
+  }
+  thead th.left { text-align: left; }
+  thead th button { all: unset; cursor: pointer; display: inline-flex; gap: 0.3rem; align-items: baseline; color: inherit; }
+  thead th button:hover { color: var(--ink); }
+  thead th button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+  thead th[aria-sort] button { color: var(--ink); }
+  thead th[aria-sort="ascending"] button::after { content: "↑"; }
+  thead th[aria-sort="descending"] button::after { content: "↓"; }
+  tbody tr.item td { padding: 0.5rem 0.55rem; border-bottom: 1px solid var(--line); text-align: right; vertical-align: middle; white-space: nowrap; }
+  tbody tr.item td.left { text-align: left; }
+  tbody tr.item:hover td { background: var(--surface); }
+  tbody tr.item.open td { background: var(--surface); border-bottom-color: transparent; }
+  tbody tr.item.open td:first-child { box-shadow: inset 3px 0 0 var(--signal); }
+  .sym { all: unset; cursor: pointer; display: inline-flex; align-items: baseline; gap: 0.5rem; font-weight: 700; font-stretch: 112%; letter-spacing: 0.01em; }
+  .sym:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+  .sym::before { content: "+"; width: 0.8rem; color: var(--muted); font-weight: 400; }
+  tr.open .sym::before { content: "–"; }
+  .tag { font-size: 0.72rem; font-weight: 500; font-stretch: 100%; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 3px; padding: 0 0.3rem; }
+  .two { display: flex; flex-direction: column; line-height: 1.25; }
+  .two small { color: var(--muted); font-size: 0.76rem; }
+  .left .two { align-items: flex-start; }
+  td .two { align-items: flex-end; }
+  .score { display: inline-grid; grid-template-columns: 2.2rem 4.5rem; align-items: center; gap: 0.5rem; }
+  .score b { font-family: var(--narrow); font-stretch: 62%; font-weight: 400; font-size: 1.7rem; line-height: 1; text-align: right; color: var(--signal); }
+  .score i { display: block; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .score i::after { content: ""; display: block; height: 100%; width: var(--w); background: var(--signal); }
+
+  /* The strike ruler: one scale for every row, so the rows compare. */
+  .ruler { display: block; width: 172px; height: 28px; overflow: visible; }
+  .ruler .axis { stroke: var(--line-strong); stroke-width: 1; }
+  .ruler .band { fill: color-mix(in oklab, var(--ink) 12%, var(--ground)); }
+  .ruler .spot { stroke: var(--ink); stroke-width: 1.5; }
+  .ruler .risk { fill: var(--ink); }
+  .ruler .short { stroke: var(--ink); stroke-width: 2.5; }
+  .ruler .be { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 2; }
+  .ruler .clip { fill: var(--muted); }
+  tr.item:hover .ruler .band, tr.open .ruler .band { fill: color-mix(in oklab, var(--ink) 18%, var(--ground)); }
+
+  /* ---- an opened row ---------------------------------------------------- */
+  tr.detail td { padding: 0; border-bottom: 1px solid var(--line-strong); background: var(--surface); }
+  .detail-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); gap: 1.4rem 2.2rem; padding: 0.4rem 1.2rem 1.5rem 1.4rem; }
+  .detail-grid h3 { margin: 0 0 0.5rem; font-size: 0.92rem; font-weight: 650; font-stretch: 88%; }
+  .legs-wrap { overflow-x: auto; }
+  .legs { width: 100%; font-size: 0.84rem; }
+  .legs th, .legs td { padding: 0.3rem 0.65rem; text-align: right; border-bottom: 1px solid var(--line); position: static; background: none; font-size: inherit; }
+  .legs th { color: var(--muted); font-weight: 500; }
+  .legs th:first-child, .legs td:first-child { text-align: left; }
+  dl.facts { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.18rem 1rem; font-size: 0.86rem; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; text-align: right; }
+  .why { display: grid; gap: 0.35rem; font-size: 0.84rem; }
+  .why > div { display: grid; grid-template-columns: minmax(0, 1fr) 3.6rem; gap: 0.1rem 0.5rem; align-items: baseline; color: var(--sub); }
+  .why output { text-align: right; color: var(--ink); }
+  .why i { grid-column: 1 / -1; display: block; height: 3px; background: var(--line); }
+  .why i::after { content: ""; display: block; height: 100%; width: var(--w); background: var(--sub); }
+  .why .off { color: var(--muted); }
+  .detail-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.8rem; }
+
+  .empty { max-width: 46ch; padding: 2.5rem 0; }
+  .empty h2 { margin: 0 0 0.4rem; font-size: 1.15rem; font-weight: 650; font-stretch: 100%; }
+  details.dropped { margin-top: 2.5rem; max-width: 70ch; }
+  details.dropped summary { cursor: pointer; font-weight: 650; font-stretch: 90%; }
+  details.dropped ul { list-style: none; padding: 0; margin: 0.8rem 0 0; display: grid; gap: 0.7rem; }
+  details.dropped li { display: grid; grid-template-columns: 2.4rem 1fr; gap: 0 0.8rem; }
+  details.dropped b { font-family: var(--narrow); font-stretch: 62%; font-weight: 300; font-size: 1.5rem; line-height: 1.1; text-align: right; }
+  details.dropped span.names { grid-column: 2; color: var(--muted); font-size: 0.82rem; overflow-wrap: anywhere; }
+
+  /* ---- palette control, as in equity-watch ----------------------------- */
+  .pal { position: fixed; left: 1.4rem; bottom: 1.2rem; z-index: 30; }
+  .pal-toggle { display: flex; gap: 0; padding: 3px; border-radius: 999px; background: var(--raised); }
+  .pal-toggle span, .pal-preset span { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line-strong); }
+  .pal-toggle span + span { margin-left: -4px; }
+  .pal-panel {
+    position: absolute; left: 0; bottom: calc(100% + 8px); width: 15rem; padding: 0.9rem; display: grid; gap: 0.55rem;
+    background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-m); box-shadow: var(--shadow); font-size: 0.82rem;
+  }
+  .pal-panel[hidden] { display: none; }
+  .pal-heading { font-weight: 650; font-stretch: 85%; font-size: 0.95rem; }
+  .pal-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .pal-preset { display: flex; justify-content: center; padding: 6px 4px; }
+  .pal-preset span + span { margin-left: -4px; }
+  .pal-field { display: flex; align-items: center; gap: 0.6rem; }
+  .pal-field input { width: 2.2rem; height: 1.6rem; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: none; }
+  .pal-code { font-size: 0.75rem; color: var(--sub); user-select: all; }
+  .pal-reset { font-size: 0.75rem; }
+
+  /* ---- the list adapts to the room it has, not to the window ------------
+     The rail is a fixed width, so a window width says little about the table's. The wrapper is a
+     size container and the columns drop out by its width: all ten need about 1140px, seven need
+     about 880px, five need about 700px, and below that the phone layout takes over. */
+  .table-wrap { container: list / inline-size; }
+  .detail-grid { width: 100%; contain: inline-size; }
+  .short { display: none; }
+  @container list (max-width: 1150px) {
+    .col-opt { display: none; }
+    .detail-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .detail-grid > :first-child { grid-column: 1 / -1; }
+  }
+  @container list (max-width: 890px) {
+    .col-mid { display: none; }
+  }
+  @container list (max-width: 700px) {
+    .tag { display: none; }
+    .ruler { width: 72px; height: auto; }
+    table { font-size: 0.86rem; }
+    .score { grid-template-columns: auto; }
+    .score i { display: none; }
+    .score b { font-size: 1.6rem; }
+    tbody tr.item td.left, thead th.left { white-space: normal; }
+    tbody tr.item td, thead th { padding-left: 0.25rem; padding-right: 0.25rem; }
+    td.left .two small { white-space: normal; }
+    .days { display: none; }
+    .strikes { white-space: nowrap; }
+    .long { display: none; }
+    .short { display: inline; }
+    .sym { gap: 0.3rem; }
+    .sym::before { width: 0.6rem; }
+    .detail-grid { grid-template-columns: minmax(0, 1fr); padding-left: 0.7rem; padding-right: 0.7rem; }
+    .legs .leg-opt { display: none; }
+    .legs th, .legs td { padding: 0.3rem 0.35rem; }
+  }
+  @container list (max-width: 400px) { .ruler { width: 58px; } }
+  @container list (max-width: 340px) { .col-ruler { display: none; } }
+
+  /* ---- narrow windows: the rail folds into a top bar ----------------------- */
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail { position: relative; height: auto; padding: 0.9rem 1rem 1rem; border-right: 0; border-bottom: 1px solid var(--line); gap: 0.8rem; }
+    .spacer { display: none; }
+    .scan-meta { margin: 0; }
+    .counts dd { font-size: 2rem; }
+    .controls > summary { display: flex; justify-content: space-between; padding: 0.45rem 0.7rem; border: 1px solid var(--line-strong); border-radius: var(--radius-s); background: var(--raised); }
+    .controls > summary::after { content: "+"; color: var(--muted); }
+    .controls[open] > summary::after { content: "–"; }
+    .controls[open] { gap: 1rem; }
+    main { padding: 1.2rem 0.8rem 6rem; }
+    .table-wrap { overflow-x: auto; }
+    thead th { position: static; }
+    .pal { left: 1rem; }
+    /* the Light/Dark button joins the title row; the swatch stays at the lower left, as in equity-watch */
+    .rail-foot { position: absolute; top: 0.75rem; bottom: auto; right: 1rem; margin: 0; padding: 0; border: 0; background: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+<aside class="rail" aria-label="Scan and filters">
+  <h1 class="site-title">Spread scanner</h1>
+  <p id="scan-meta" class="scan-meta">Loading the scan</p>
+  <dl class="counts" aria-label="This scan">
+    <div><dt>symbols scanned</dt><dd id="count-universe">–</dd></div>
+    <div><dt>with spreads</dt><dd id="count-names">–</dd></div>
+    <div><dt>spreads shown</dt><dd id="count-shown">–</dd></div>
+  </dl>
+
+  <details class="controls" id="controls" open>
+    <summary>Filters and weights</summary>
+
+    <fieldset>
+      <legend>Show</legend>
+      <div class="row">
+        <label><input type="checkbox" id="f-put" checked> Put spreads</label>
+        <label><input type="checkbox" id="f-call" checked> Call spreads</label>
+      </div>
+      <div class="row">
+        <select id="f-kind" aria-label="Stocks and funds">
+          <option value="all">Stocks and funds</option>
+          <option value="stocks">Stocks only</option>
+          <option value="funds">Funds only</option>
+        </select>
+        <select id="f-per" aria-label="Spreads per symbol">
+          <option value="1">Best 1 per symbol</option>
+          <option value="3">Best 3 per symbol</option>
+          <option value="5">Best 5 per symbol</option>
+          <option value="0">All of each symbol</option>
+        </select>
+      </div>
+      <input type="search" id="f-search" placeholder="Find a symbol" aria-label="Find a symbol" autocomplete="off">
+    </fieldset>
+
+    <fieldset>
+      <legend>Spread width</legend>
+      <div class="chips" id="f-widths" role="group" aria-label="Spread widths in dollars"></div>
+      <div class="row">
+        <button type="button" id="w-five">$5 only</button>
+        <button type="button" id="w-all">All widths</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Expiration</legend>
+      <select id="f-exp" aria-label="Expiration"></select>
+    </fieldset>
+
+    <fieldset>
+      <legend>Keep only</legend>
+      <div class="limits">
+        <label for="f-ror">Return on risk, min %</label><input type="number" id="f-ror" min="0" step="1" inputmode="decimal" placeholder="any">
+        <label for="f-pop">Chance of profit, min %</label><input type="number" id="f-pop" min="0" max="100" step="1" inputmode="decimal" placeholder="any">
+        <label for="f-ivp">IV percentile, min</label><input type="number" id="f-ivp" min="0" max="100" step="1" inputmode="decimal" placeholder="any">
+        <label for="f-ivhv">IV over realised, min</label><input type="number" id="f-ivhv" min="0" step="0.1" inputmode="decimal" placeholder="any">
+        <label for="f-slip">Slippage, max %</label><input type="number" id="f-slip" min="0" step="1" inputmode="decimal" placeholder="any">
+        <label for="f-leg">Widest bid-ask, max %</label><input type="number" id="f-leg" min="0" step="1" inputmode="decimal" placeholder="any">
+      </div>
+      <div class="row"><button type="button" id="f-reset">Clear filters</button></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Score weights</legend>
+      <p class="note" style="margin:0 0 .3rem">Move a slider and the list re-ranks. Only the proportions matter. These start at the scan's own weights, a first guess.</p>
+      <div id="weights"></div>
+      <div class="row"><button type="button" id="w-reset">Use the scan's weights</button></div>
+    </fieldset>
+  </details>
+
+  <span class="spacer"></span>
+  <div class="rail-foot"><button id="theme-btn" type="button">Light</button></div>
+</aside>
+
+<main>
+  <p id="summary" class="summary" aria-live="polite"></p>
+  <p class="note key">In each row the line is the stock, the shaded band is one expected move either side of it, and the bar runs from the short strike to the long strike. A dashed tick marks the break-even.</p>
+  <div class="table-wrap" id="table-wrap">
+    <table id="spreads">
+      <thead><tr id="head"></tr></thead>
+      <tbody id="body"></tbody>
+    </table>
+  </div>
+  <div id="empty" class="empty" hidden>
+    <h2>No spreads match these filters</h2>
+    <p class="note" style="font-size:.92rem">Lower the return or chance-of-profit minimum, allow more widths, or clear the filters to see the whole scan.</p>
+    <button type="button" id="empty-reset">Clear filters</button>
+  </div>
+  <details class="dropped" id="dropped"><summary id="dropped-summary"></summary><ul id="dropped-list"></ul></details>
+</main>
+</div>
+
+<!--SCAN-DATA-->
+<script src="model.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

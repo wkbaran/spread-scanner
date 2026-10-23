@@ -12,6 +12,7 @@ config/local.json
 
 # Scanner output and the daily input log (market data, and what you were looking at)
 runs/
+report/
 *.jsonl
 logs/
 *.log

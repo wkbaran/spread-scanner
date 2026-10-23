@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { FileCache, noCache } from './cache.ts';
 import { loadConfig } from './config.ts';
@@ -10,17 +10,19 @@ import { Http } from './http.ts';
 import { Fmp } from './providers/fmp.ts';
 import { Tastytrade } from './providers/tastytrade.ts';
 import { rankScan } from './rank.ts';
+import { REPORT_ASSETS, renderReport } from './report.ts';
 import { scan } from './scan.ts';
 import { addDays, easternDate } from './dates.ts';
 import { formatValidation, validationReport } from './validate.ts';
 import type { DailyBar } from './providers/fmp.ts';
 import type { RankedScan } from './types.ts';
-import { readdirSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const USAGE = `Usage:
   node src/cli.ts scan (--symbols A,B,C | --symbols-file FILE) [options]
+  node src/cli.ts report [--run FILE] [--out DIR]
+    Builds the browser report from a saved scan (default: the latest in runs/) into report/.
   node src/cli.ts validate [--runs DIR] [--min-age-days N]
     Checks the saved runs that are old enough against what the market did next.
 
@@ -52,6 +54,28 @@ function writeAtomic(path: string, text: string): void {
   const temp = `${path}.${process.pid}.tmp`;
   writeFileSync(temp, text);
   renameSync(temp, path);
+}
+
+/** The newest saved scan in `dir`, or null. File names start with the time, so the last sorts newest. */
+export function latestRun(dir: string): string | null {
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('-scan.json')).sort() : [];
+  const last = files.at(-1);
+  return last === undefined ? null : join(dir, last);
+}
+
+function report(values: { run?: string; out?: string }): number {
+  const file = values.run ?? latestRun(join(root, 'runs'));
+  if (file === null || !existsSync(file)) {
+    process.stderr.write('No saved scan to report on. Run a scan first, or pass --run FILE.\n');
+    return 1;
+  }
+  const scanned = JSON.parse(readFileSync(file, 'utf8')) as RankedScan;
+  const out = resolve(values.out ?? join(root, 'report'));
+  const web = join(root, 'web');
+  writeAtomic(join(out, 'index.html'), renderReport(readFileSync(join(web, 'index.html'), 'utf8'), scanned));
+  for (const asset of REPORT_ASSETS) copyFileSync(join(web, asset), join(out, asset));
+  process.stdout.write(`Wrote ${join(out, 'index.html')}\nOpen ${pathToFileURL(join(out, 'index.html')).href}\n`);
+  return 0;
 }
 
 async function validate(values: { runs?: string; credentials?: string; 'min-age-days'?: string }): Promise<number> {
@@ -90,16 +114,18 @@ async function main(argv: string[]): Promise<number> {
       limit: { type: 'string' },
       'per-symbol': { type: 'string' },
       runs: { type: 'string' },
+      run: { type: 'string' },
       'min-age-days': { type: 'string' },
       'no-cache': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
-  if (values.help === true || (positionals[0] !== 'scan' && positionals[0] !== 'validate')) {
+  if (values.help === true || !['scan', 'validate', 'report'].includes(positionals[0] ?? '')) {
     process.stderr.write(USAGE);
     return values.help === true ? 0 : 2;
   }
   if (positionals[0] === 'validate') return validate(values);
+  if (positionals[0] === 'report') return report(values);
   const symbols = readSymbols(values.symbols, values['symbols-file']);
   if (symbols.length === 0) {
     process.stderr.write(`No symbols given.\n\n${USAGE}`);
