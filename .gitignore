@@ -22,3 +22,6 @@ coverage/
 .vscode/
 .idea/
 .DS_Store
+
+# Cached chain listings and calendar windows
+.cache/

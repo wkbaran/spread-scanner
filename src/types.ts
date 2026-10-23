@@ -58,3 +58,53 @@ export interface ScannerConfig {
     rate: number;
   };
 }
+
+/** What a scan learned about one underlying. Several candidates share it, so it is stored once. */
+export interface SymbolInfo {
+  spot: number;
+  isEtf: boolean;
+  isIlliquid: boolean;
+  sector: string | null;
+  ivIndex: number | null;
+  ivRank: number | null;
+  ivPercentile: number | null;
+  hv30: number | null;
+  hv60: number | null;
+  hv90: number | null;
+  beta: number | null;
+  liquidityRating: number | null;
+  /** tastytrade's report date and its time of day (AMC or BMO), as held: next if upcoming, last if past. */
+  reportDate: string | null;
+  reportTimeOfDay: string | null;
+  earnings: {
+    ok: boolean;
+    reason: string;
+    last: string | null;
+    next: string | null;
+    daysSinceLast: number | null;
+    daysUntilNext: number | null;
+  };
+}
+
+export interface Candidate {
+  symbol: string;
+  spread: Spread;
+}
+
+export interface Dropped {
+  reason: string;
+  symbols: string[];
+}
+
+export interface ScanResult {
+  /** Version of this file's shape. */
+  schema: 'spread-scanner/scan@1';
+  generatedAt: string;
+  /** New York date the scan ran on. */
+  today: string;
+  config: ScannerConfig;
+  universe: number;
+  dropped: Dropped[];
+  symbols: Record<string, SymbolInfo>;
+  candidates: Candidate[];
+}

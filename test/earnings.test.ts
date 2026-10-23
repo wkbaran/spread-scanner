@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { daysBetween, earningsVerdict, splitReportDates } from '../src/earnings.ts';
+import { daysBetween } from '../src/dates.ts';
+import { earningsVerdict, requiredCoverage, splitReportDates } from '../src/earnings.ts';
 import { config } from './fixtures.ts';
 
 const today = '2026-10-23';
@@ -43,4 +44,23 @@ test('two sources that disagree: the nearer next date decides', () => {
   const v = earningsVerdict(['2026-10-01', '2026-11-24', '2026-12-01'], today, config());
   assert.equal(v.next, '2026-11-24');
   assert.equal(v.ok, false);
+});
+
+test('an unknown date passes when a complete calendar covered the window, and fails when it did not', () => {
+  const cfg = config();
+  const coverage = requiredCoverage(today, cfg);
+  assert.deepEqual(coverage, { from: '2026-10-20', to: '2026-11-28' });
+  const none = earningsVerdict([], today, cfg, coverage);
+  assert.equal(none.ok, true);
+  assert.match(none.reason, /no report inside the window/);
+  assert.equal(earningsVerdict(['2026-10-01'], today, cfg, coverage).ok, true, 'just reported, no next date on file');
+  assert.equal(earningsVerdict([], today, cfg, { from: '2026-10-21', to: '2026-11-28' }).ok, false, 'a calendar that starts a day late');
+  assert.equal(earningsVerdict([], today, cfg, { from: '2026-10-20', to: '2026-11-27' }).ok, false, 'or ends a day early');
+});
+
+test('known dates are judged the same with or without coverage', () => {
+  const cfg = config();
+  const coverage = requiredCoverage(today, cfg);
+  assert.equal(earningsVerdict(['2026-10-20', '2026-12-31'], today, cfg, coverage).ok, false);
+  assert.equal(earningsVerdict(['2026-10-01', '2026-11-20'], today, cfg, coverage).ok, false);
 });

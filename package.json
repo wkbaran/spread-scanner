@@ -7,6 +7,7 @@
     "node": ">=26"
   },
   "scripts": {
+    "scan": "node src/cli.ts scan",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc"
   },
