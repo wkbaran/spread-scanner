@@ -183,7 +183,10 @@
   .score i::after { content: ""; display: block; height: 100%; width: var(--w); background: var(--signal); }
 
   /* The strike ruler: one scale for every row, so the rows compare. */
-  .ruler { display: block; width: 172px; height: 28px; overflow: visible; }
+  .ruler { display: block; width: 103px; height: 28px; margin: 0 auto; overflow: visible; }
+  /* the title sits over the graph, wrapping onto two lines rather than making the column wider than it */
+  thead th.col-ruler, tbody tr.item td.col-ruler { text-align: center; }
+  thead th.col-ruler button { display: inline-block; max-width: 6.5rem; white-space: normal; text-align: center; line-height: 1.25; }
   .ruler .axis { stroke: var(--line-strong); stroke-width: 1; }
   .ruler .band { fill: color-mix(in oklab, var(--ink) 12%, var(--ground)); }
   .ruler .spot { stroke: var(--ink); stroke-width: 1.5; }
@@ -251,14 +254,10 @@
     .detail-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .detail-grid > :first-child { grid-column: 1 / -1; }
   }
-  @container list (max-width: 1250px) {
-    .ruler { width: 134px; height: auto; }
-    .long { display: none; }
-    .short { display: inline; }
-  }
-  @container list (max-width: 1000px) { .ruler { width: 118px; height: auto; } }
   @container list (max-width: 740px) {
     .tag { display: none; }
+    .long { display: none; }
+    .short { display: inline; }
     .ruler { width: 72px; height: auto; }
     table { font-size: 0.86rem; }
     .score { grid-template-columns: auto; }
@@ -378,7 +377,7 @@
 
 <main>
   <p id="summary" class="summary" aria-live="polite"></p>
-  <p class="note key">In each row the line is the stock, the shaded band is one expected move either side of it, and the bar runs from the short strike to the long strike. A dashed tick marks the break-even.</p>
+  <p class="note key">In each row the line is the stock, the shaded band is one expected move either side of it, and the bar runs from the short strike to the long strike. A dashed tick marks the break-even, and an arrow means a strike is past the edge (1.5 expected moves).</p>
   <div class="table-wrap" id="table-wrap">
     <table id="spreads">
       <thead><tr id="head"></tr></thead>

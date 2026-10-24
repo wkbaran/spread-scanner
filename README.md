@@ -80,7 +80,7 @@ node src/cli.ts report        # the latest scan in runs/ -> report/index.html
 
 One self-contained page: open `report/index.html` straight from disk, no server. The scan is embedded in it.
 
-- **Every row has a strike ruler.** The line is the stock, the shaded band is one expected move either side of it (the stock's IV over the days left), and the bar runs from the short strike to the long strike. Puts sit left of the stock and calls right, on one shared scale, so rows compare at a glance.
+- **Every row has a strike ruler.** The line is the stock, the shaded band is one expected move either side of it (the stock's IV over the days left), and the bar runs from the short strike to the long strike. Puts sit left of the stock and calls right, on one shared scale of plus or minus 1.5 expected moves (an arrow marks a strike beyond it), so rows compare at a glance. A short strike at 0.15 to 0.25 delta sits at roughly 0.7 to 1 expected move by construction, so most spreads land inside the band.
 - **Filters** for side, spread width (a chip for each width the scan found), expiration, stocks or funds, and minimums or maximums on return, chance of profit, IV percentile, IV over realised vol, slippage and the widest bid-ask. The list shows the best three of each symbol unless you ask for more.
 - **Weight sliders** re-rank the list as you move them. Open a row to see its legs, the underlying's figures and how each component ranked.
 - **A palette picker and a Light/Dark button**, the same control as equity-watch's.

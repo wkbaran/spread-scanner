@@ -237,7 +237,7 @@
   function rulerSvg(candidate, info) {
     const r = M.ruler(candidate, info);
     if (r === null) return el("span", { class: "muted", text: "–" });
-    const W = 172;
+    const W = 103;
     const x = (f) => (f * W).toFixed(1);
     const text = `Short strike ${strike(candidate.spread.short.strike)} is ${r.distance.toFixed(1)} expected moves from the stock${r.clipped ? ", off the scale" : ""}`;
     const node = svg("svg", { class: "ruler", viewBox: `0 0 ${W} 28`, role: "img", "aria-label": text });
@@ -251,6 +251,12 @@
       svg("line", { class: "be", x1: x(r.breakeven), x2: x(r.breakeven), y1: 3, y2: 25 }),
       svg("line", { class: "short", x1: x(r.short), x2: x(r.short), y1: 5, y2: 23 }),
     );
+    // A strike past the scale is pinned to the edge; a small arrow there says it went further.
+    if (r.clipped) {
+      const edge = Math.max(r.short, r.long) > 0.5 ? W : 0;
+      const dir = edge === 0 ? -1 : 1;
+      node.append(svg("path", { class: "clip", d: `M${edge + dir * 1} 8 L${edge + dir * 6} 14 L${edge + dir * 1} 20 Z` }));
+    }
     return node;
   }
 

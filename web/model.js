@@ -7,7 +7,7 @@
   const WEIGHT_KEYS = ["ivPercentile", "ivOverHv", "returnOnRisk", "pop", "legSpread", "distance"];
 
   /** How many expected moves each side of the stock the ruler covers. */
-  const RULER_EM = 2.5;
+  const RULER_EM = 1.5;
 
   /**
    * The same weighted average as weightedScore in src/rank.ts, which tests pin this copy to: a
@@ -140,8 +140,8 @@
   }
 
   /**
-   * Where the pieces of a spread fall on the ruler, as fractions of its width (0 is 2.5 expected
-   * moves below the stock, 1 is 2.5 above). The expected move is the stock's IV over the days left,
+   * Where the pieces of a spread fall on the ruler, as fractions of its width (0 is 1.5 expected
+   * moves below the stock, 1 is 1.5 above). The expected move is the stock's IV over the days left,
    * so a long-dated, high-IV name gets a wide band and its strikes sit nearer the middle.
    */
   function ruler(candidate, info) {
