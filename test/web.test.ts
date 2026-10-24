@@ -199,3 +199,22 @@ test('net greeks: the leg bought minus the leg sold, so a bull put spread leans 
   assert.equal(M.netGreeks(put.spread), null);
   assert.equal(M.netGreeks(withGreeks(put, g(-0.2, 0.02, -0.08, 0.5, -0.1), { ...g(-0.15, 0.015, -0.06, 0.4, -0.08), vega: null as unknown as number }).spread), null);
 });
+
+test('OptionStrat links: the leg bought, then the leg sold with a minus, in the form the site itself produces', () => {
+  const base = ranked('AAA', 0.5, {});
+  const make = (symbol: string, side: 'put' | 'call', expiration: string, shortStrike: number, longStrike: number): RankedCandidate => ({
+    ...base,
+    symbol,
+    spread: { ...base.spread, side, expiration, short: { ...base.spread.short, side, strike: shortStrike }, long: { ...base.spread.long, side, strike: longStrike } },
+  });
+  // the user's own example, copied from OptionStrat
+  assert.equal(M.optionStratUrl(make('IWM', 'put', '2026-12-04', 260, 255)), 'https://optionstrat.com/build/bull-put-spread/IWM/.IWM261204P255,-.IWM261204P260');
+  // a call spread is a bear call spread, the higher strike bought; both forms were opened on the site and read back correctly
+  assert.equal(M.optionStratUrl(make('SPY', 'call', '2026-12-04', 790, 795)), 'https://optionstrat.com/build/bear-call-spread/SPY/.SPY261204C795,-.SPY261204C790');
+  // a half-dollar strike keeps its decimal
+  assert.equal(M.optionStratUrl(make('TLT', 'put', '2026-12-04', 77.5, 72.5)), 'https://optionstrat.com/build/bull-put-spread/TLT/.TLT261204P72.5,-.TLT261204P77.5');
+  // a symbol that is not plain letters (BRK/B) gets no link rather than a wrong one
+  assert.equal(M.optionStratUrl(make('BRK/B', 'put', '2026-12-04', 450, 445)), null);
+  // single-digit months and days keep their zeros
+  assert.match(M.optionStratUrl(make('QQQ', 'call', '2027-01-08', 700, 705)) as string, /\.QQQ270108C705,-\.QQQ270108C700$/);
+});

@@ -262,6 +262,14 @@
 
   const rowKey = (c) => [c.symbol, c.spread.side, c.spread.expiration, c.spread.short.strike, c.spread.long.strike].join("|");
 
+  /** The strikes in a row, as a link to the same spread in OptionStrat when there is one. */
+  function strikesLabel(c) {
+    const s = c.spread;
+    const text = `${strike(s.short.strike)} / ${strike(s.long.strike)} ${s.side}`;
+    const url = M.optionStratUrl(c);
+    return url === null ? el("span", { class: "strikes", text }) : el("a", { class: "strikes", href: url, target: "_blank", rel: "noopener", title: "Open this spread in OptionStrat", text });
+  }
+
   function row(c) {
     const s = c.spread;
     const info = scan.symbols[c.symbol];
@@ -277,7 +285,7 @@
       "tr",
       { class: `item${open ? " open" : ""}` },
       el("td", { class: "left" }, toggle),
-      el("td", { class: "left" }, el("span", { class: "two" }, el("span", { class: "strikes", text: `${strike(s.short.strike)} / ${strike(s.long.strike)} ${s.side}` }), el("small", {}, `${M.shortDate(s.expiration)}, `, el("span", { class: "days", text: `${s.dte} days, ` }), `${width(s.width)} wide`))),
+      el("td", { class: "left" }, el("span", { class: "two" }, strikesLabel(c), el("small", {}, `${M.shortDate(s.expiration)}, `, el("span", { class: "days", text: `${s.dte} days, ` }), `${width(s.width)} wide`))),
       el("td", { text: pct(s.profitPct) }),
       el("td", { text: pct(s.popPct) }),
       el("td", { text: c.components.ivPercentile === null ? "–" : num(c.components.ivPercentile * 100) }),
@@ -362,7 +370,7 @@
         ["Next report", report],
       ])),
       el("div", {}, el("h3", { text: "Why it scores this" }), why),
-      el("div", { class: "detail-actions" }, copy, status),
+      el("div", { class: "detail-actions" }, copy, M.optionStratUrl(c) === null ? null : el("a", { class: "button", href: M.optionStratUrl(c), target: "_blank", rel: "noopener", text: "Open in OptionStrat" }), status),
     );
   }
 

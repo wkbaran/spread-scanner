@@ -56,6 +56,10 @@ The risk-free rate in that calculation is the latest SOFR from the New York Fed 
 
 So `scan` makes two quote requests: first one probe contract per name, side and expiration, at the near edge of an index-sized band; then the real band, sized from the probe's own implied volatility (`MIN_WING_SIGMA` guards a stale print, and the index is the fallback). The probe is not requoted. Do not go back to one request: the test `the strike band follows the volatility the options trade at` fails if you do. A wider fixed margin is not a substitute, because the gap between index and wing varies by name and by day.
 
+## OptionStrat links
+
+`optionStratUrl` in `web/model.js` builds `https://optionstrat.com/build/<bull-put-spread|bear-call-spread>/<SYMBOL>/.<SYMBOL><YYMMDD><P|C><strike>,-.<SYMBOL>...`: the leg bought first, the leg sold with a leading minus. The user supplied one put example; a call spread and a half-dollar strike were checked by opening them on the site and reading the page title ("SPY Dec 4th 795/790 Bear Call Spread"). OptionStrat's site refuses plain HTTP fetches (403), so a check needs a real browser. The table or graph view is not in the link: the site keeps it in the visitor's localStorage (`displayType`), and the user is happy with their own default. Symbols that are not plain letters (BRK/B) get no link, because the option root can differ from the stock's.
+
 ## No watchlist: the funnel
 
 A scan with no `--symbols` starts from every optionable stock and fund (`Tastytrade.optionableEquities`, about 6,000 of the catalogue's 13,000: those with `option-tick-sizes` and not closing-only) and narrows it in `scan` when `deps.funnel` is set. Things that look simplifiable and aren't:

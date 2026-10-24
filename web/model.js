@@ -192,6 +192,22 @@
   const trim = (n) => String(Math.round(n * 1000) / 1000);
 
   /** The spread as a person would say it to a broker: "SPY Nov 30 713/708 put spread, credit 0.40". */
+  /**
+   * The link that opens this spread in OptionStrat's builder: the strategy, the underlying, then the leg bought
+   * and the leg sold (leading minus), each as a dot, the root, YYMMDD, P or C and the strike. Verified against
+   * the site for a put and a call spread and for a half-dollar strike. Which view it opens in (table or graph)
+   * is not in the link: OptionStrat keeps that choice in the visitor's own browser. Null for a symbol that is
+   * not a plain letters-only root (BRK/B and the like), where the option root can differ from the stock's.
+   */
+  function optionStratUrl(candidate) {
+    const s = candidate.spread;
+    if (!/^[A-Z]{1,6}$/.test(candidate.symbol)) return null;
+    const [yyyy, mm, dd] = s.expiration.split("-");
+    const leg = (q) => `.${candidate.symbol}${yyyy.slice(2)}${mm}${dd}${s.side === "put" ? "P" : "C"}${q.strike}`;
+    const strategy = s.side === "put" ? "bull-put-spread" : "bear-call-spread";
+    return `https://optionstrat.com/build/${strategy}/${candidate.symbol}/${leg(s.long)},-${leg(s.short)}`;
+  }
+
   function describe(candidate) {
     const s = candidate.spread;
     return `${candidate.symbol} ${shortDate(s.expiration)} ${trim(s.short.strike)}/${trim(s.long.strike)} ${s.side} spread, credit ${s.creditMid.toFixed(2)}`;
@@ -214,6 +230,7 @@
     ruler,
     shortDate,
     describe,
+    optionStratUrl,
     GREEKS,
     netGreeks,
   };
