@@ -1,0 +1,226 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  spread-scanner report - static site hosting.
+  S3 bucket (private) + CloudFront (HTTPS, optional basic auth) + a publish user
+  that can only write objects to the bucket.
+  Deploy in us-east-1: ACM certificates used by CloudFront must live there.
+
+  Modelled on the equity-watch dashboard stack, minus everything that writes back
+  (no ops queue, no Lambda): the report is one page rebuilt a few times a day.
+  The publisher uploads every object with Cache-Control: no-cache, so no
+  invalidations are needed.
+
+  The page embeds the scan, and the scan carries the thresholds it ran with
+  (days to expiry, delta band, earnings rule). Set EnableBasicAuth=true if you
+  would rather not publish those.
+
+Parameters:
+
+  BucketName:
+    Type: String
+    Description: S3 bucket name (globally unique, e.g. spread-scanner-yourname).
+
+  EnableBasicAuth:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['false', 'true']
+    Description: Put a username/password prompt in front of the whole site.
+
+  BasicAuthUser:
+    Type: String
+    Default: ''
+    Description: Username the browser will prompt for (only with EnableBasicAuth=true).
+
+  BasicAuthPassword:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >
+      Password the browser will prompt for (only with EnableBasicAuth=true; use 12+
+      characters). It is embedded in the CloudFront Function code, so anyone with
+      CloudFront console access to this account can read it.
+
+  CustomDomain:
+    Type: String
+    Default: ''
+    Description: >
+      Custom domain to serve from, e.g. spreads.example.com. Empty (the default) serves
+      from the distribution's cloudfront.net URL instead. Deliberately undefaulted: a
+      template in a public repo should not carry anyone's domain. Pass it on EVERY
+      deploy once a stack has one - omitting it on a later deploy removes the alias and
+      the certificate.
+
+  HostedZoneId:
+    Type: String
+    Default: ''
+    # Must be the PUBLIC hosted zone. Certificate validation and the alias record both
+    # have to go in the public one or nothing outside a VPC can resolve them.
+    Description: Route 53 public Hosted Zone ID for CustomDomain. Required when CustomDomain is set.
+
+Conditions:
+  HasCustomDomain: !Not [!Equals [!Ref CustomDomain, '']]
+  HasBasicAuth: !Equals [!Ref EnableBasicAuth, 'true']
+
+Resources:
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  OAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${BucketName}-oac'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # A wildcard distribution ID avoids a BucketPolicy <-> Distribution cycle.
+  # Restricted to this AWS account.
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${Bucket.Arn}/*'
+            Condition:
+              StringLike:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/*'
+
+  BasicAuthFunction:
+    Type: AWS::CloudFront::Function
+    Condition: HasBasicAuth
+    Properties:
+      Name: !Sub '${BucketName}-basic-auth'
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Basic auth for the spread scanner report
+        Runtime: cloudfront-js-2.0
+      FunctionCode: !Sub
+        - |
+          function handler(event) {
+            var auth = event.request.headers.authorization;
+            if (auth && auth.value === 'Basic ${Expected}') {
+              return event.request;
+            }
+            return {
+              statusCode: 401,
+              statusDescription: 'Unauthorized',
+              headers: { 'www-authenticate': { value: 'Basic realm="spreads"' } }
+            };
+          }
+        # Long form: YAML allows only one tag per node, so `!Base64 !Sub` is invalid.
+        - Expected:
+            Fn::Base64: !Sub '${BasicAuthUser}:${BasicAuthPassword}'
+
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: HasCustomDomain
+    Properties:
+      DomainName: !Ref CustomDomain
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref CustomDomain
+          HostedZoneId: !Ref HostedZoneId
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    DependsOn: BucketPolicy
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt Bucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !Ref OAC
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          # AWS managed CachingOptimized. It honors the origin's Cache-Control, and
+          # every object is uploaded with no-cache.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          AllowedMethods: [GET, HEAD]
+          Compress: true
+          FunctionAssociations: !If
+            - HasBasicAuth
+            - - EventType: viewer-request
+                FunctionARN: !GetAtt BasicAuthFunction.FunctionMetadata.FunctionARN
+            - !Ref AWS::NoValue
+        Aliases: !If
+          - HasCustomDomain
+          - [!Ref CustomDomain]
+          - !Ref AWS::NoValue
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref Certificate
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasCustomDomain
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref CustomDomain
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2   # fixed zone ID for all CloudFront distributions
+        DNSName: !GetAtt Distribution.DomainName
+        EvaluateTargetHealth: false
+
+  # The scanner only ever PUTs: no listing, no deleting.
+  PublishUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub 'spread-scanner-publisher-${BucketName}'
+      Policies:
+        - PolicyName: ReportPublish
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${Bucket.Arn}/*'
+
+  PublishAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref PublishUser
+
+Outputs:
+  SiteUrl:
+    Value: !If
+      - HasCustomDomain
+      - !Sub 'https://${CustomDomain}'
+      - !Sub 'https://${Distribution.DomainName}'
+  BucketName:
+    Description: S3_BUCKET in .env
+    Value: !Ref Bucket
+  Region:
+    Description: AWS_REGION in .env
+    Value: !Ref AWS::Region
+  AccessKeyId:
+    Description: AWS_ACCESS_KEY_ID in .env
+    Value: !Ref PublishAccessKey
+  SecretAccessKey:
+    Description: AWS_SECRET_ACCESS_KEY in .env (visible here only; store securely)
+    Value: !GetAtt PublishAccessKey.SecretAccessKey

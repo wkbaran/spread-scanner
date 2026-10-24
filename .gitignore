@@ -8,6 +8,7 @@ out/
 config/local.json
 .env
 .env.*
+!.env.example
 *.secret
 
 # Scanner output and the daily input log (market data, and what you were looking at)
@@ -26,3 +27,6 @@ coverage/
 
 # Cached chain listings and calendar windows
 .cache/
+
+# Container state kept beside the code when run from a checkout
+watchlist*.txt

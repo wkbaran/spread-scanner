@@ -1,0 +1,12 @@
+.git
+node_modules
+runs
+report
+.cache
+.env
+.env.*
+config/local.json
+docs
+test
+infra
+scripts

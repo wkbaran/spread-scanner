@@ -1,0 +1,49 @@
+# Run spread-scanner's scheduled scan, report and publish on a Docker host.
+# Setup, first start and updating: docker/README.md.
+#
+#   docker compose -f docker/docker-compose.yaml up -d --build
+#   docker compose -f docker/docker-compose.yaml logs -f
+#
+# Two files feed it, and neither is copied into the image:
+#   ../.env       the app's settings (TT_*, FMP_API_KEY, S3_BUCKET, AWS_*), passed to the container.
+#   docker/.env   STATE_DIR, read by compose itself to fill in the volume path below
+#                 (template: docker/.env.example).
+# Compose reads both on the machine running it, so with DOCKER_HOST=ssh://user@host they need not
+# exist on the host.
+
+name: spread-scanner
+
+x-common: &common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: spread-scanner:latest
+  env_file: ../.env
+  volumes:
+    # STATE_DIR is an absolute path on the Docker host holding watchlist.txt, config/local.json,
+    # runs/ (the log `validate` needs: back it up), report/ and .cache/. It is required, with no
+    # default: a missing one would mount an empty directory owned by root.
+    # :z relabels for SELinux hosts (Fedora CoreOS); other hosts ignore it.
+    - ${STATE_DIR:?set STATE_DIR in docker/.env to an absolute path on the Docker host}:/data:z
+  init: true
+
+services:
+  spread-scanner:
+    <<: *common
+    restart: unless-stopped
+    # A run takes seconds, but `docker stop` waits for the one in flight.
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # One-off CLI against the same state, e.g. a scan or the validation:
+  #   docker compose -f docker/docker-compose.yaml run --rm cli validate
+  # Never started by `up`: it needs the "tools" profile, which `run` turns on.
+  cli:
+    <<: *common
+    profiles: ["tools"]
+    entrypoint: ["/app/docker/entrypoint.sh", "spread-scanner"]
+    command: []
