@@ -44,7 +44,8 @@ const MAX_SIGMA = 3;
 const MIN_WING_SIGMA = 0.05;
 const CALENDAR_WINDOW_DAYS = 3;
 const CALENDAR_TTL_MS = 12 * 3_600_000;
-const CHAIN_TTL_MS = 20 * 3_600_000;
+/** A chain listing holds contract names, not prices. 8 hours: runs within a session share one, the next morning's refetches (new expirations and strikes appear overnight). */
+const CHAIN_TTL_MS = 8 * 3_600_000;
 const BARS_TTL_MS = 12 * 3_600_000;
 /** Calendar days of bars wanted: the 90-day volatility window plus slack for weekends and holidays. */
 const BARS_DAYS = 130;

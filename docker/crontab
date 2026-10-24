@@ -1,10 +1,11 @@
-# The container's schedule, run by supercronic (see Dockerfile).
+# The container's schedule, run by supercronic (see Dockerfile). Times are in TZ, which the image sets to
+# America/Denver, as equity-watch's does, so every time in these services is in one zone. New York and
+# Denver change their clocks on the same dates, so these stay at the same point in the session all year:
+# 7:40 is ten minutes after the open, 13:20 is forty minutes before the close.
 #
-# CRON_TZ pins the scans to the market's clock, so they stay at the same point in the session
-# whatever TZ the container shows in its logs, and across the daylight-saving change. Two scans a
-# weekday: an hour after the open and an hour before the close. Each saves its whole ranked result
-# to /data/runs, which is the log `validate` needs, then rebuilds the report and publishes it. A
-# spread listed on both runs counts once, at its first listing. Edit an expression and rebuild.
+# Four scans a weekday. Each saves its whole ranked result to /data/runs, which is the log `validate`
+# needs, then rebuilds the report and publishes it. A spread listed on several runs counts once, at its
+# first listing. Edit an expression and rebuild.
 #
 # There is no holiday calendar. A scan on a market holiday runs against the last session's quotes
 # and saves a run that repeats the day before; harmless to `validate`, but the published report
@@ -12,6 +13,7 @@
 #
 # The 15-minute line is only the heartbeat the healthcheck reads (healthcheck.sh): the scans are
 # too far apart for their own timestamp to say the scheduler is alive.
-CRON_TZ=America/New_York
 */15 * * * * touch /tmp/alive
-0 10,15 * * 1-5 /app/docker/run-scan.sh
+40 7 * * 1-5 /app/docker/run-scan.sh
+30 9,11 * * 1-5 /app/docker/run-scan.sh
+20 13 * * 1-5 /app/docker/run-scan.sh

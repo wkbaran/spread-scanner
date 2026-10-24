@@ -50,11 +50,11 @@ RUN sed -i 's/\r$//' docker/*.sh docker/crontab \
  && mkdir /data \
  && chown node:node /data
 
-# TZ is the zone the container's logs and clock use. The default is the market's; the owner's goes in
-# ../.env (TZ=...), which compose passes in. The schedule does not depend on it (docker/crontab).
+# One time zone for the schedule, the logs and the report, the same as equity-watch's container, so no
+# service shows a time in a zone the next one does not. Change it here and in config's display.timeZone.
 ENV HOME=/data \
     SPREAD_SCANNER_STATE_DIR=/data \
-    TZ=America/New_York \
+    TZ=America/Denver \
     NODE_ENV=production
 WORKDIR /data
 VOLUME /data

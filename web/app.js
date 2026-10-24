@@ -78,10 +78,10 @@
 
   // ---- the scan's header and counts ------------------------------------------------------
   // The zone the scan was configured to show times in (config display.timeZone). Scans saved before
-  // that setting existed carry none, and are shown in the market's zone.
+  // that setting existed carry none, and are shown in the default zone, Mountain.
   function displayZone() {
     const zone = scan.config && scan.config.display && scan.config.display.timeZone;
-    return zone || "America/New_York";
+    return zone || "America/Denver";
   }
 
   function renderHeader() {

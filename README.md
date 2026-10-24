@@ -58,7 +58,7 @@ For each underlying that is left, per expiration in the DTE window:
 | `maxLegSpreadPct` | Largest (ask - bid) / mid, in percent, for any option used |
 | `earnings.minDaysSinceLast`, `earnings.minDaysUntilNext` | The earnings rule |
 | `universe.minLiquidityRating`, `universe.maxNames` | The funnel for a scan with no list: the lowest tastytrade liquidity rating (1 to 5) and the most names that go on to chains and quotes |
-| `display.timeZone` | Zone for the scan time shown in the report (default `America/New_York`); dates are unaffected |
+| `display.timeZone` | Zone for the scan time shown in the report (default `America/Denver`); dates are unaffected |
 | `strikeSelection` | Slack and margins for choosing which strikes to quote. `rateFromSofr` (on by default) takes the risk-free rate from the latest SOFR, published free by the New York Fed and cached for the day; `rate` is the fallback if that cannot be fetched. The rate each run used is saved in it |
 
 ## Using it
@@ -116,7 +116,7 @@ Create a tastytrade OAuth client with the `read` scope only; the scanner never p
 
 ## Running it on a schedule
 
-`docker/` runs the scan twice every weekday in a container, saves each ranked result to `runs/` (the log `validate` reads), rebuilds the report and publishes it:
+`docker/` runs the scan four times every weekday in a container, saves each ranked result to `runs/` (the log `validate` reads), rebuilds the report and publishes it:
 
 ```bash
 node src/cli.ts publish      # upload report/ to S3 (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)

@@ -1,12 +1,12 @@
 # Running spread-scanner on a Docker host
 
-One container runs `docker/run-scan.sh` on weekdays at 10:00 and 15:00 New York time, the market's clock: scan the
+One container runs `docker/run-scan.sh` on weekdays at 7:40, 9:30, 11:30 and 13:20 Mountain time: scan the
 whole optionable market (or a watchlist, if you leave one), save the ranked result, rebuild the report and publish it to S3 behind CloudFront. The
 saved runs are the log that `validate` needs, so leaving this running is what makes the ranking
 checkable.
 
 The scheduler is [supercronic](https://github.com/aptible/supercronic) reading `docker/crontab`.
-Nothing runs at container start; the first scan is the next 10:00 or 15:00 New York time.
+Nothing runs at container start; the first scan is the next one on that list.
 
 Run everything below from the repo root. There is no build step and no `npm install`: Node 26 runs
 the TypeScript directly.
@@ -34,14 +34,11 @@ cp docker/.env.example docker/.env      # then set STATE_DIR to an absolute path
 
 ## Time zones
 
-The schedule is fixed to New York (`CRON_TZ` in `docker/crontab`), so it does not move with anything
-below. Two settings choose what *you* see, and both are your own files, not the repository's:
-
-- **`TZ=...` in `.env`** sets the container's clock, which is what its logs and `date` show. The image
-  default is New York.
-- **`display.timeZone` in `config/local.json`** sets the zone of the scan time on the report.
-
-Dates on the report (expirations, earnings) have no time or zone, so neither changes them.
+Everything a person reads is in one zone, Mountain, the same as equity-watch's container: the schedule in
+`docker/crontab`, the container's logs and `date` (`TZ` in the Dockerfile), and the scan time on the
+report (`display.timeZone` in the config). Mixing zones across services gets confusing fast, so if you move,
+change all three together. Market logic (what "today" is for the earnings rule) is New York's date
+regardless. Dates on the report (expirations, earnings) have no time or zone.
 
 ## 1. Create the site
 

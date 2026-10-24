@@ -2,7 +2,7 @@ import type { Cache } from './cache.ts';
 import type { Sofr } from './providers/nyfed.ts';
 import type { ScannerConfig } from './types.ts';
 
-const RATE_TTL_MS = 20 * 3_600_000;
+const RATE_TTL_MS = 12 * 3_600_000;
 /** A published overnight rate outside this is a parsing accident, not a rate (the real range this century is 0 to about 5.5%). */
 const PLAUSIBLE = { min: -0.01, max: 0.2 };
 

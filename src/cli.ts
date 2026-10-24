@@ -173,7 +173,7 @@ async function main(argv: string[]): Promise<number> {
   const started = Date.now();
   const log = (message: string): void => void process.stderr.write(`${message}\n`);
   // No list given: start from every optionable name and let the funnel narrow it (config `universe`).
-  const symbols = explicit ? given : await cache.getOrFetch('optionable-equities', 20 * 3_600_000, () => tt.optionableEquities());
+  const symbols = explicit ? given : await cache.getOrFetch('optionable-equities', 12 * 3_600_000, () => tt.optionableEquities());
   if (!explicit) log(`${symbols.length} optionable stocks and funds`);
   // The strike band wants a risk-free rate; take SOFR so it follows the market, and record what was used.
   const rate = await resolveRate(cfg, () => new NyFed(new Http({ userAgent: 'spread-scanner/0.1', minIntervalMs: 0 })).sofr(), cache, log);

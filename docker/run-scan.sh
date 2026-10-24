@@ -13,8 +13,6 @@ cd "${SPREAD_SCANNER_STATE_DIR:-$APP_DIR}" || exit 2
 
 cli() { node "$APP_DIR/src/cli.ts" "$@"; }
 
-# Stamp the log in the container's own zone, not the schedule's (see entrypoint.sh).
-[ -z "${CONTAINER_TZ:-}" ] || export TZ="$CONTAINER_TZ"
 echo "=== $(date -Is) ==="
 
 # With no watchlist the scan starts from every optionable stock and fund and narrows it itself
