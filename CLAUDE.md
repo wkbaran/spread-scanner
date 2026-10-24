@@ -75,6 +75,12 @@ A scan with no `--symbols` starts from every optionable stock and fund (`Tastytr
 - **The stack is modelled on equity-watch's** (`infra/cloudformation.yaml`) without the ops queue and Lambda. Keep the same rules: `CustomDomain` is undefaulted because this is a public repo, and `scripts/deploy-stack.sh` passes every parameter each time because a bare `aws cloudformation deploy` would drop the domain and certificate. Never commit `.env`, the domain, a hosted zone id or the docker host's address; use placeholders in docs.
 - **The page embeds the scan, and the scan carries the user's thresholds.** On a public site that publishes them. `EnableBasicAuth` exists for that.
 
+## The expected move is the short option's own, not the IV index's
+
+The ruler's band, the "distance from the stock" figure and the `distance` component all measure in expected moves: one standard deviation, spot x IV x sqrt(years). The IV must be the short option's own (`spread.short.iv`), the volatility its delta was computed with. Then a strike at 0.16 delta sits at the band's edge, 0.20 at about 0.84 of it and 0.25 at about 0.67, so the user's 0.15 to 0.25 delta range puts every short strike at roughly 0.7 to 1.0 expected moves: inside the band, by construction, and the ruler shows it consistently. Drawn from the IV index instead (an at-the-money figure, 19.8% for SPY against 13% at the calls that were traded) the same strikes read as 0.47 to 1.28, and 98% looked inside. The index is only the fallback when an option has no IV. `web/model.js` and `src/rank.ts` each carry the rule; a test pins each.
+
+The ruler is drawn in expected moves, so the band is always the same fraction of its width, and a different IV only moves the strikes.
+
 ## Dates and time zones
 
 Earnings logic works on date strings (`YYYY-MM-DD`) so no zone enters it, but "today" must be the New York date: a UTC date is already tomorrow during the evening session. Pass it in; do not read the clock inside the logic (`pairSpreads` and the earnings functions take everything they need as arguments, which is what keeps the tests fixed).

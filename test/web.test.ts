@@ -131,7 +131,15 @@ test('ruler: the stock at the middle, puts to the left and calls to the right, o
   const far = M.ruler(ranked('AAA', 0.5, { shortStrike: 40 }), s.symbols['AAA']);
   assert.equal(far.clipped, true);
   assert.ok(far.short >= 0 && far.short <= 1, 'clamped onto the ruler');
-  assert.equal(M.ruler(s.candidates[0], { ...s.symbols['AAA']!, ivIndex: null }), null);
+  assert.notEqual(M.ruler(s.candidates[0], { ...s.symbols['AAA']!, ivIndex: null }), null, 'the option has its own IV, so a missing index does not matter');
+  const noIv = (c: RankedCandidate): RankedCandidate => ({ ...c, spread: { ...c.spread, short: { ...c.spread.short, iv: 0 } } });
+  assert.equal(M.ruler(noIv(s.candidates[0]!), { ...s.symbols['AAA']!, ivIndex: null }), null, 'with neither, there is nothing to measure in');
+  // the ruler is in expected moves, so the band is always the same width; the short option's IV decides how far out its strike falls
+  const calm = (c: RankedCandidate): RankedCandidate => ({ ...c, spread: { ...c.spread, short: { ...c.spread.short, iv: 0.15 } } });
+  const wide = M.ruler(s.candidates[0], s.symbols['AAA'])!;
+  const narrow = M.ruler(calm(s.candidates[0]!), s.symbols['AAA'])!;
+  close(narrow.band[1] - narrow.band[0], wide.band[1] - wide.band[0], 1e-12);
+  assert.ok(narrow.distance > wide.distance && Math.abs(narrow.short - 0.5) > Math.abs(wide.short - 0.5), 'a calmer option puts the same strike further out in its own moves');
   // distance is in expected moves: 10 points below at 30% IV over 52 days is about 0.78 of a move
   close(put.distance, 10 / (100 * 0.3 * Math.sqrt(52 / 365)), 1e-9);
 });

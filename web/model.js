@@ -141,12 +141,14 @@
 
   /**
    * Where the pieces of a spread fall on the ruler, as fractions of its width (0 is 1.5 expected
-   * moves below the stock, 1 is 1.5 above). The expected move is the stock's IV over the days left,
-   * so a long-dated, high-IV name gets a wide band and its strikes sit nearer the middle.
+   * moves below the stock, 1 is 1.5 above). The expected move is one standard deviation: the short
+   * option's own IV over the days left. That is the volatility its delta was computed with, so a strike at
+   * 0.16 delta sits at the edge of the band. The IV index (an at-the-money figure, often far from the
+   * wing's) is used only when the option has no IV of its own.
    */
   function ruler(candidate, info) {
     const s = candidate.spread;
-    const iv = info.ivIndex;
+    const iv = s.short.iv > 0 ? s.short.iv : info.ivIndex;
     const em = iv ? info.spot * iv * Math.sqrt(s.dte / 365) : null;
     if (!em) return null;
     const at = (price) => Math.min(1, Math.max(0, 0.5 + (price - info.spot) / em / (2 * RULER_EM)));

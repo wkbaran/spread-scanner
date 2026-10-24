@@ -46,7 +46,10 @@ const worstLegSpread = (c: Candidate): number => {
 export function components(c: Candidate, info: SymbolInfo): Components {
   const s = c.spread;
   const blend = blendedVolatility(info);
-  const expectedMove = info.ivIndex === null ? null : info.spot * info.ivIndex * Math.sqrt(s.dte / 365);
+  // One standard deviation by the short option's own volatility, the one its delta was computed with;
+  // the IV index only when the option has none. The page's ruler draws the same distance (web/model.js).
+  const strikeIv = s.short.iv > 0 ? s.short.iv : info.ivIndex;
+  const expectedMove = strikeIv === null ? null : info.spot * strikeIv * Math.sqrt(s.dte / 365);
   return {
     ivRank: info.ivRank,
     ivPercentile: info.ivPercentile,

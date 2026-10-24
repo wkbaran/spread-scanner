@@ -69,7 +69,13 @@ test('components: IV over realised vol, natural return on risk, worst leg spread
   close(k.legSpread, Math.max((0.1 / 1.05) * 100, (0.04 / 0.42) * 100), 1e-9);
   close(k.distance, 10 / (100 * 0.3 * Math.sqrt(c.spread.dte / 365)), 1e-12);
   assert.equal(components(c, info({ hv30: null, hv60: null, hv90: null })).ivOverHv, null);
-  assert.equal(components(c, info({ ivIndex: null })).distance, 0);
+  // the distance is measured in the short option's own expected move, so a missing IV index changes nothing
+  close(components(c, info({ ivIndex: null })).distance, k.distance, 1e-12);
+  const noIv = { ...c, spread: { ...c.spread, short: { ...c.spread.short, iv: 0 } } };
+  assert.equal(components(noIv, info({ ivIndex: null })).distance, 0); // with neither there is no expected move to measure in
+  close(components(noIv, info()).distance, k.distance, 1e-12); // the index stands in for an option with no IV of its own
+  const calm = { ...c, spread: { ...c.spread, short: { ...c.spread.short, iv: 0.15 } } };
+  close(components(calm, info({ ivIndex: 0.6 })).distance, 10 / (100 * 0.15 * Math.sqrt(c.spread.dte / 365)), 1e-12); // the option's 15%, not the index's 60%
   assert.equal(k.ivRank, 0.5, 'the IV rank travels with the components so the page can show and sort by it');
   assert.equal(components(c, info({ ivRank: 0.8 })).ivRank, 0.8);
 });
