@@ -22,6 +22,11 @@ interface Fake {
   noMetrics?: boolean;
   noQuote?: boolean;
   noHv?: boolean;
+  /** tastytrade's 1 to 5 liquidity rating (default 4) and IV percentile (default 0.6). */
+  rating?: number;
+  percentile?: number;
+  /** The volatility every option actually trades at, when it differs from the IV index (a skewed wing). */
+  wingIv?: number;
 }
 
 const market: Record<string, Fake> = {
@@ -37,32 +42,32 @@ const market: Record<string, Fake> = {
   NOHV: { reportDate: '2026-12-20', noHv: true }, // tastytrade has no historical volatility for it
 };
 
-function build() {
+function build(book: Record<string, Fake> = market) {
   const log = { metrics: 0, listings: [] as string[], quoted: [] as string[][], equity: [] as string[][] };
-  const spotOf = (symbol: string): number => market[symbol]?.spot ?? 100;
+  const spotOf = (symbol: string): number => book[symbol]?.spot ?? 100;
   const tt: TastytradeLike = {
     async metrics(symbols) {
       log.metrics++;
       const out = new Map<string, SymbolMetrics>();
       for (const s of symbols) {
-        const m = market[s];
+        const m = book[s];
         if (m === undefined || m.noMetrics === true) continue;
         out.set(s, {
-          symbol: s, ivIndex: m.iv === undefined ? 0.3 : m.iv, ivRank: 0.5, ivPercentile: 0.6,
+          symbol: s, ivIndex: m.iv === undefined ? 0.3 : m.iv, ivRank: 0.5, ivPercentile: m.percentile ?? 0.6,
           hv30: m.noHv === true ? null : 0.2, hv60: m.noHv === true ? null : 0.22, hv90: m.noHv === true ? null : 0.25,
-          beta: 1, liquidityRating: 4, sector: 'Tech', reportDate: m.reportDate ?? null, reportTimeOfDay: 'AMC',
+          beta: 1, liquidityRating: m.rating ?? 4, sector: 'Tech', reportDate: m.reportDate ?? null, reportTimeOfDay: 'AMC',
         });
       }
       return out;
     },
     async instruments(symbols) {
       const out = new Map<string, InstrumentFlags>();
-      for (const s of symbols) out.set(s, { isEtf: market[s]?.etf === true, isIndex: false, isIlliquid: false, optionsClosingOnly: false, active: true });
+      for (const s of symbols) out.set(s, { isEtf: book[s]?.etf === true, isIndex: false, isIlliquid: false, optionsClosingOnly: false, active: true });
       return out;
     },
     async equityQuotes(symbols) {
       log.equity.push(symbols);
-      return new Map(symbols.filter((s) => market[s]?.noQuote !== true).map((s) => [s, { mark: spotOf(s) }] as const));
+      return new Map(symbols.filter((s) => book[s]?.noQuote !== true).map((s) => [s, { mark: spotOf(s) }] as const));
     },
     async chainListing(symbol) {
       log.listings.push(symbol);
@@ -79,8 +84,8 @@ function build() {
         const p = parseOcc(o);
         if (p === null) continue;
         const symbol = o.slice(0, 6).trim();
-        const { price, delta } = blackScholes(p.side, spotOf(symbol), p.strike, 0.3, daysBetween(today, expiration) / 365);
-        out.set(o, { bid: Math.max(0.01, Math.round((price - 0.02) * 100) / 100), ask: Math.round((price + 0.02) * 100) / 100, delta, iv: 0.3, openInterest: 1000, volume: 50 });
+        const { price, delta } = blackScholes(p.side, spotOf(symbol), p.strike, book[symbol]?.wingIv ?? 0.3, daysBetween(today, expiration) / 365);
+        out.set(o, { bid: Math.max(0.01, Math.round((price - 0.02) * 100) / 100), ask: Math.round((price + 0.02) * 100) / 100, delta, iv: book[symbol]?.wingIv ?? 0.3, openInterest: 1000, volume: 50 });
       }
       return out;
     },
@@ -153,14 +158,36 @@ test('the candidates are real credit spreads inside every configured limit', asy
   assert.ok(new Set(result.candidates.map((c) => c.spread.width)).size > 1, 'more than one width is offered');
 });
 
-test('only a narrow band of each chain is quoted, in one request set for all the names', async () => {
+test('only a narrow band of each chain is quoted: a probe per side and expiration, then one request set for all the names', async () => {
   const { tt, fmp, log } = build();
   await scan(['AAA', 'FUND', 'JUST'], config(), { tt, fmp, cache: new MemoryCache(), now });
-  assert.equal(log.quoted.length, 1, 'one optionQuotes call; the provider does the batching');
-  const all = log.quoted[0] as string[];
+  assert.equal(log.quoted.length, 2, 'the probes, then everything else; the provider does the batching');
+  const [probes, rest] = log.quoted as [string[], string[]];
+  assert.equal(probes.length, 3 * 2, 'one per name, side and expiration in the window');
+  const all = [...probes, ...rest];
+  assert.equal(new Set(all).size, all.length, 'no contract is quoted twice');
   const chainSize = 81 * 2;
   assert.ok(all.length < 3 * chainSize * 0.5, `${all.length} contracts for three names whose chains hold ${3 * chainSize}`);
   assert.equal(log.equity.length, 1);
+});
+
+test("the strike band follows the volatility the options trade at, not the IV index: a call wing far below the index is still reached", async () => {
+  // The index says 30%, but every option trades at 15%, as SPY's calls did against its 19.8% index.
+  const book: Record<string, Fake> = { WING: { reportDate: '2026-12-20', wingIv: 0.15 } };
+  const { tt, fmp } = build(book);
+  const cfg = config({ maxLegSpreadPct: 500 }); // cheap wings have wide quotes in the fake; the bid-ask rule is not what is under test
+  const result = await scan(['WING'], cfg, { tt, fmp, cache: new MemoryCache(), now });
+  const dte = daysBetween(today, expiration);
+  const calls = result.candidates.filter((c) => c.spread.side === 'call').map((c) => c.spread.short);
+  assert.ok(calls.length > 0);
+  // the nearest short strike whose real delta is still inside the band
+  let nearest = Infinity;
+  for (let k = 101; k <= 140; k++) {
+    if (blackScholes('call', 100, k, 0.15, dte / 365).delta <= cfg.delta.max) { nearest = k; break; }
+  }
+  assert.ok(Number.isFinite(nearest) && nearest > 101);
+  assert.equal(Math.min(...calls.map((q) => q.strike)), nearest, 'the nearest strike the delta band allows was quoted and paired');
+  assert.ok(calls.every((q) => Math.abs(q.delta) <= cfg.delta.max && Math.abs(q.delta) >= cfg.delta.min));
 });
 
 test('chain listings and calendar windows are cached, so a second scan fetches neither again', async () => {
@@ -238,4 +265,38 @@ test('the printed list can be limited to the best few per underlying, in overall
   assert.deepEqual(top.map((c) => c.score), [...top.map((c) => c.score)].sort((a, b) => b - a));
   assert.equal(topPerSymbol(ranked.candidates, 0).length, ranked.candidates.length);
   assert.ok(summarize(ranked, 100, 2).includes('best 2 per symbol'));
+});
+
+test('with the funnel on, a scan starts from every name, cuts by liquidity and by richness of IV, and counts what it cut', async () => {
+  const book: Record<string, Fake> = {
+    RICH: { reportDate: '2026-12-20', percentile: 0.9 },
+    MID: { reportDate: '2026-12-20', percentile: 0.5 },
+    CHEAP: { reportDate: '2026-12-20', percentile: 0.1 },
+    THIN: { reportDate: '2026-12-20', percentile: 0.99, rating: 2 }, // the richest IV of all, but not liquid enough
+    SOON: { reportDate: '2026-11-02', percentile: 0.95 },
+  };
+  const { tt, fmp, log } = build(book);
+  const cfg = config({ universe: { minLiquidityRating: 4, maxNames: 2 } });
+  const result = await scan(Object.keys(book), cfg, { tt, fmp, cache: new MemoryCache(), now, funnel: true });
+  assert.deepEqual(Object.keys(result.symbols).sort(), ['MID', 'RICH'], 'the two richest that pass, and not the thin one nor the cheap one');
+  assert.deepEqual(result.funnel, [
+    { label: 'optionable stocks and funds', count: 5 },
+    { label: 'liquidity rating 4 or better', count: 4 },
+    { label: 'pass the earnings rule', count: 3 },
+    { label: 'richest IV, up to 2', count: 2 },
+    { label: 'have a spread that passes', count: 2 },
+  ]);
+  assert.equal(result.universe, 4, 'the names examined, after the liquidity step');
+  assert.ok(!result.dropped.some((d) => d.symbols.includes('THIN') || d.symbols.includes('CHEAP')), 'names cut by the funnel are counted, not listed');
+  assert.deepEqual(dropped(result, 'earnings: reports too soon'), ['SOON'], 'a name that fails a rule is still listed');
+  assert.ok(!log.listings.includes('CHEAP') && !log.listings.includes('THIN'), 'no chain was fetched for a name the funnel cut');
+  assert.ok(summarize(rankScan(result, cfg.ranking.weights), 5).includes('funnel: 5 optionable stocks and funds > 4 liquidity rating 4 or better'));
+});
+
+test('an explicit list is never thinned, and carries no funnel', async () => {
+  const book: Record<string, Fake> = { A: { reportDate: '2026-12-20', rating: 1 }, B: { reportDate: '2026-12-20', rating: 1 }, C: { reportDate: '2026-12-20', rating: 1 } };
+  const { tt, fmp } = build(book);
+  const result = await scan(Object.keys(book), config({ universe: { minLiquidityRating: 4, maxNames: 1 } }), { tt, fmp, cache: new MemoryCache(), now });
+  assert.deepEqual(Object.keys(result.symbols).sort(), ['A', 'B', 'C']);
+  assert.equal(result.funnel, undefined);
 });

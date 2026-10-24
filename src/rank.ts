@@ -18,6 +18,26 @@ export function percentRanks(values: Array<number | null>): Array<number | null>
   return values.map((v) => (v === null ? null : rankOf(v)));
 }
 
+/**
+ * A score for each underlying from what tastytrade's metrics already say, before any option is
+ * quoted: its IV percentile and its IV over realised volatility, ranked across the list and
+ * weighted as in the full ranking. A name with no historical volatility is judged on the
+ * percentile alone. This only decides which names are worth the expensive calls.
+ */
+export function preScores(infos: Array<Pick<SymbolInfo, 'ivIndex' | 'ivPercentile' | 'hv30' | 'hv60' | 'hv90'>>, weights: RankWeights): number[] {
+  const percentile = percentRanks(infos.map((i) => i.ivPercentile));
+  const overHv = percentRanks(
+    infos.map((i) => {
+      const blend = blendedVolatility(i);
+      return i.ivIndex !== null && blend !== null ? i.ivIndex / blend : null;
+    }),
+  );
+  const only: RankWeights = { ivPercentile: weights.ivPercentile, ivOverHv: weights.ivOverHv, returnOnRisk: 0, pop: 0, legSpread: 0, distance: 0 };
+  return infos.map((_, i) =>
+    weightedScore({ ivPercentile: percentile[i] ?? null, ivOverHv: overHv[i] ?? null, returnOnRisk: null, pop: null, legSpread: null, distance: null }, only),
+  );
+}
+
 const worstLegSpread = (c: Candidate): number => {
   const pct = (q: { bid: number; ask: number }): number => ((q.ask - q.bid) / ((q.ask + q.bid) / 2)) * 100;
   return Math.max(pct(c.spread.short), pct(c.spread.long));

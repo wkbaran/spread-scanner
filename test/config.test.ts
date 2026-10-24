@@ -29,3 +29,23 @@ test('nonsense is rejected', () => {
   assert.throws(() => validateConfig(config({ width: { min: 11, max: 10 } })), /width/);
   assert.throws(() => validateConfig(config({ maxLegSpreadPct: 0 })), /maxLegSpreadPct/);
 });
+
+test('a display time zone that is not one is rejected, and the committed default is accepted', () => {
+  const base = config();
+  assert.doesNotThrow(() => validateConfig({ ...base, display: { timeZone: 'Europe/London' } }));
+  assert.throws(() => validateConfig({ ...base, display: { timeZone: 'Mountain' } }), /display\.timeZone/);
+});
+
+test('the funnel settings are checked', () => {
+  const base = config();
+  assert.doesNotThrow(() => validateConfig({ ...base, universe: { minLiquidityRating: 0, maxNames: 1 } }));
+  assert.throws(() => validateConfig({ ...base, universe: { minLiquidityRating: 6, maxNames: 10 } }), /minLiquidityRating/);
+  assert.throws(() => validateConfig({ ...base, universe: { minLiquidityRating: 4, maxNames: 0 } }), /maxNames/);
+  assert.throws(() => validateConfig({ ...base, universe: { minLiquidityRating: 4, maxNames: 2.5 } }), /maxNames/);
+});
+
+test('the rate must be an annual fraction, not a percent', () => {
+  const base = config();
+  assert.doesNotThrow(() => validateConfig({ ...base, strikeSelection: { ...base.strikeSelection, rate: 0.039 } }));
+  assert.throws(() => validateConfig({ ...base, strikeSelection: { ...base.strikeSelection, rate: 3.9 } }), /strikeSelection\.rate/);
+});

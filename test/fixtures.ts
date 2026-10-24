@@ -9,7 +9,9 @@ export function config(overrides: Partial<ScannerConfig> = {}): ScannerConfig {
     maxLegSpreadPct: 20,
     earnings: { minDaysSinceLast: 4, minDaysUntilNext: 37 },
     ranking: { weights: { ivPercentile: 0.2, ivOverHv: 0.3, returnOnRisk: 0.25, pop: 0.15, legSpread: 0.1, distance: 0 } },
-    strikeSelection: { deltaSlack: 0.02, nearMarginEM: 0.15, farMarginEM: 0.35, rate: 0.04 },
+    universe: { minLiquidityRating: 4, maxNames: 250 },
+    display: { timeZone: 'America/New_York' },
+    strikeSelection: { deltaSlack: 0.02, nearMarginEM: 0.15, farMarginEM: 0.35, rate: 0.04, rateFromSofr: false },
     ...overrides,
   };
 }

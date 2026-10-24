@@ -59,6 +59,7 @@ export interface OptionQuoteData {
 const BATCH_METRICS = 500;
 const BATCH_QUOTES = 100; // the quote call caps symbols at 100 a request
 const BATCH_INSTRUMENTS = 100;
+const EQUITY_PAGE = 1000; // the catalogue's largest page
 const TOKEN_LIFETIME_MS = 10 * 60_000; // tokens last 15 minutes; refresh early
 
 type Json = Record<string, unknown>;
@@ -160,6 +161,24 @@ export class Tastytrade {
           reportTimeOfDay: typeof timeOfDay === 'string' ? timeOfDay : null,
         });
       }
+    }
+    return out;
+  }
+
+  /**
+   * Every active stock and fund that has listed options, whatever its liquidity: tastytrade's
+   * catalogue is about 13,000 instruments and the ones with option tick sizes are the optionable ones.
+   * Options that can only be closed are left out. About 6,000 names in 14 requests.
+   */
+  async optionableEquities(): Promise<string[]> {
+    const out: string[] = [];
+    for (let page = 0; ; page++) {
+      const items = this.items(await this.get(`/instruments/equities/active?per-page=${EQUITY_PAGE}&page-offset=${page}`));
+      for (const item of items) {
+        const symbol = String(item['symbol'] ?? '');
+        if (symbol !== '' && item['option-tick-sizes'] !== undefined && item['is-options-closing-only'] !== true) out.push(symbol);
+      }
+      if (items.length < EQUITY_PAGE) break;
     }
     return out;
   }

@@ -146,3 +146,21 @@ test('option quotes: 100 a request, spaces encoded, fields parsed, incomplete qu
   const q = quotes.get(symbols[1] as string);
   assert.deepEqual(q, { bid: 0.52, ask: 0.56, delta: -0.174708982, iv: 0.3157, openInterest: 749, volume: 138 });
 });
+
+test('discovery: pages of 1000 until a short page, optionable and not closing-only', async () => {
+  const optionable = { 'option-tick-sizes': [{ value: '0.01' }] };
+  const page = (n: number) => Array.from({ length: n }, (_, i) => ({ symbol: `S${i}`, ...optionable }));
+  const { fetch, calls } = api((path) => {
+    const offset = Number(/page-offset=(\d+)/.exec(path)?.[1]);
+    if (offset === 0) return { data: { items: page(1000) } };
+    return { data: { items: [{ symbol: 'GOOD', ...optionable }, { symbol: 'NOOPT' }, { symbol: 'CLOSING', ...optionable, 'is-options-closing-only': true }] } };
+  });
+  const tt = new Tastytrade(credentials, instantHttp(fetch));
+  const symbols = await tt.optionableEquities();
+  assert.equal(symbols.length, 1001);
+  assert.equal(symbols.at(-1), 'GOOD');
+  assert.ok(!symbols.includes('NOOPT') && !symbols.includes('CLOSING'));
+  const pages = calls.filter((c) => c.url.includes('/instruments/equities/active'));
+  assert.equal(pages.length, 2);
+  assert.match(pages[0]?.url ?? '', /per-page=1000&page-offset=0/);
+});

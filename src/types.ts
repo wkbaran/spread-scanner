@@ -49,6 +49,18 @@ export interface ScannerConfig {
   maxLegSpreadPct: number;
   earnings: { minDaysSinceLast: number; minDaysUntilNext: number };
   ranking: { weights: RankWeights };
+  /**
+   * The funnel used when a scan is given no symbols, so it starts from every optionable stock and fund.
+   * It never applies to an explicit list of symbols.
+   */
+  universe: {
+    /** tastytrade's liquidity rating (1 to 5) a name needs to be looked at. The cheapest stand-in for the bid-ask rule. */
+    minLiquidityRating: number;
+    /** After the earnings rule, only this many names, best first by IV percentile and IV over realised vol, go on to chains and quotes. */
+    maxNames: number;
+  };
+  /** How the report shows clock times. Dates (expirations, earnings) carry no zone and are not affected. */
+  display: { timeZone: string };
   strikeSelection: {
     /** Delta tolerance either side of the range when choosing which strikes to quote. */
     deltaSlack: number;
@@ -56,7 +68,10 @@ export interface ScannerConfig {
     nearMarginEM: number;
     /** Extra reach, in expected moves, on the far side, where skew pushes the strike out. */
     farMarginEM: number;
+    /** The risk-free rate to use when `rateFromSofr` is off, or when SOFR cannot be fetched. */
     rate: number;
+    /** Use the latest SOFR from the New York Fed as the rate, and `rate` only as the fallback. */
+    rateFromSofr: boolean;
   };
 }
 
@@ -99,6 +114,12 @@ export interface Dropped {
   symbols: string[];
 }
 
+/** One step of the funnel, for a scan that started from every optionable name. */
+export interface FunnelStage {
+  label: string;
+  count: number;
+}
+
 export interface ScanResult {
   /** Version of this file's shape. */
   schema: 'spread-scanner/scan@1';
@@ -106,7 +127,12 @@ export interface ScanResult {
   /** New York date the scan ran on. */
   today: string;
   config: ScannerConfig;
+  /** The names examined: the whole list given, or what was left after the funnel's liquidity step. */
   universe: number;
+  /** The risk-free rate used to place the strike band, and where it came from. */
+  rate?: { value: number; source: string };
+  /** Present when the scan discovered its own names. Counts only: thousands of names are not listed. */
+  funnel?: FunnelStage[];
   dropped: Dropped[];
   symbols: Record<string, SymbolInfo>;
   candidates: Candidate[];

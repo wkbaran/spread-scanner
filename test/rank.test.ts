@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { components, percentRanks, rankScan, weightedScore } from '../src/rank.ts';
+import { components, percentRanks, preScores, rankScan, weightedScore } from '../src/rank.ts';
 import { blendedVolatility, historicalVolatility } from '../src/volatility.ts';
 import { spreadMetrics } from '../src/spread.ts';
 import type { Candidate, RankWeights, Ranks, ScanResult, SymbolInfo } from '../src/types.ts';
@@ -97,4 +97,24 @@ test('ranking: a tighter, better-paying spread outranks a worse one, and the ord
   const ranked = rankScan(result, weights({ returnOnRisk: 1, legSpread: 1 }));
   assert.deepEqual(ranked.candidates.map((c) => c.symbol), ['BBB', 'AAA']);
   assert.ok(ranked.candidates[0]!.score > ranked.candidates[1]!.score);
+});
+
+test('pre-scores: IV percentile and IV over realised vol decide, a name with no history is judged on the percentile alone', () => {
+  const hv = { hv30: 0.2, hv60: 0.2, hv90: 0.2 };
+  const none = { hv30: null, hv60: null, hv90: null };
+  const w = weights({ ivPercentile: 1, ivOverHv: 1, pop: 9, returnOnRisk: 9 }); // the spread-level weights must not count
+  const [rich, cheap, noHistory, thin] = preScores(
+    [
+      { ivIndex: 0.5, ivPercentile: 0.9, ...hv },
+      { ivIndex: 0.22, ivPercentile: 0.1, ...hv },
+      { ivIndex: 0.4, ivPercentile: 0.5, ...none },
+      { ivIndex: 0.3, ivPercentile: null, ...hv },
+    ],
+    w,
+  ) as [number, number, number, number];
+  assert.ok(rich > noHistory && noHistory > cheap, `${rich} ${noHistory} ${cheap}`);
+  assert.equal(rich, 1, 'best on both');
+  assert.equal(noHistory, 0.5, 'the middle percentile, and nothing else to count');
+  assert.ok(thin > 0 && thin < 1, 'a missing percentile drops out; it is scored on IV over vol alone');
+  assert.deepEqual(preScores([], w), []);
 });

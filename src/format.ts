@@ -47,6 +47,9 @@ export function topPerSymbol(candidates: RankedCandidate[], perSymbol: number): 
 export function summarize(result: RankedScan, limit: number, perSymbol = 0): string {
   const lines: string[] = [];
   lines.push(`${result.universe} symbols on ${result.today}: ${Object.keys(result.symbols).length} produced ${result.candidates.length} candidate spreads`);
+  if (result.funnel !== undefined) {
+    lines.push('  funnel: ' + result.funnel.map((f) => `${f.count} ${f.label}`).join(' > '));
+  }
   for (const d of result.dropped) {
     const sample = d.symbols.slice(0, 6).join(', ');
     lines.push(`  dropped ${pad(d.symbols.length, 4)}  ${d.reason}${sample === '' ? '' : `  (${sample}${d.symbols.length > 6 ? ', ...' : ''})`}`);

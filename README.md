@@ -4,7 +4,7 @@
 
 **Which credit spreads are worth opening today, and how likely are their options to be overpriced?**
 
-Scans a watchlist for bull put and bear call spreads, drops the names that are about to report earnings, keeps the options that trade tightly, and ranks what is left by how rich implied volatility is against what the stock actually does.
+Scans the whole optionable market, or a list you give it, for bull put and bear call spreads, drops the names that are about to report earnings, keeps the options that trade tightly, and ranks what is left by how rich implied volatility is against what the stock actually does.
 
 ![Node 26+](https://img.shields.io/badge/node-26%2B-339933?logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-native-3178C6?logo=typescript&logoColor=white)
@@ -12,7 +12,7 @@ Scans a watchlist for bull put and bear call spreads, drops the names that are a
 ![Data: tastytrade + FMP](https://img.shields.io/badge/data-tastytrade%20%2B%20FMP-00A0DF)
 ![Status: early](https://img.shields.io/badge/status-early-lightgrey)
 
-[What it uses](#what-it-uses) · [How it picks spreads](#how-it-picks-spreads) · [Using it](#using-it) · [The report](#the-report) · [Configuration](#configuration) · [Status](#status) · [Data sources](docs/DATA_SOURCES.md)
+[What it uses](#what-it-uses) · [How it picks spreads](#how-it-picks-spreads) · [Using it](#using-it) · [The report](#the-report) · [Configuration](#configuration) · [Running it on a schedule](#running-it-on-a-schedule) · [Status](#status) · [Data sources](docs/DATA_SOURCES.md)
 
 <img src="docs/screenshots/overview.png" alt="The Spread scanner report: the ranked spreads with a strike ruler on each row, one row opened to show its legs, its underlying and why it scores what it does" width="900">
 
@@ -31,10 +31,18 @@ There is no Schwab dependency. [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) has 
 
 ## How it picks spreads
 
-For each underlying that passes the earnings rule, per expiration in the DTE window:
+**Which underlyings.** With no list given, the scan starts from every optionable stock and fund (about 6,000, from tastytrade's catalogue) and narrows by what one metrics call already says, before any chain is fetched:
+
+1. tastytrade's **liquidity rating** of at least `universe.minLiquidityRating` (4 by default, about 550 names). It is the cheapest stand-in for the bid-ask rule below: most names under it fail that rule anyway.
+2. The **earnings rule**, below.
+3. The richest `universe.maxNames` (250 by default) by IV percentile and IV over realised volatility, so the expensive calls go to the names the ranking would favour. Names with no historical volatility are judged on the percentile alone.
+
+The scan prints and saves the counts at each step (`funnel`) rather than listing thousands of names. A list given with `--symbols` or `--symbols-file` is scanned exactly, never thinned.
+
+For each underlying that is left, per expiration in the DTE window:
 
 1. **Earnings** (`src/earnings.ts`). The last report at least `minDaysSinceLast` days ago and the next at least `minDaysUntilNext` away. An unknown date fails. When sources disagree the nearer next date wins.
-2. **Which contracts to quote** (`src/strikes.ts`). Neither broker filters a chain by delta, so the delta range is turned into a strike range from the spot and the IV index, and only those contracts (about 22 a symbol, against 74 for a broad pull) are requested.
+2. **Which contracts to quote** (`src/strikes.ts`). Neither broker filters a chain by delta, so the delta range is turned into a strike range from the spot and the volatility the options actually trade at, and only those contracts (about 25 a symbol, against 74 for a broad pull) are requested. That volatility is read from one probe contract per side and expiration, because the IV index is an at-the-money figure and a wing can sit far from it: SPY's index was 19.8% while its calls at 0.2 delta traded near 13%.
 3. **Pairing** (`src/spread.ts`). A short leg needs an absolute delta in `delta.min..delta.max`, must be out of the money, and every leg used must have a bid-ask within `maxLegSpreadPct` of its mid. Every usable long leg between `width.min` and `width.max` dollars past it is a candidate, so one short strike can give several spreads. The report filters by width.
 4. **Odds and cost.** Credit at the mid and at the natural price, max risk, return on risk, and a chance of profit read from the delta at the break-even (not `1 - |delta| + credit / width`, which counts the credit twice).
 
@@ -49,17 +57,20 @@ For each underlying that passes the earnings rule, per expiration in the DTE win
 | `width.min`, `width.max` | Spread widths in dollars; every available width in the range is a candidate |
 | `maxLegSpreadPct` | Largest (ask - bid) / mid, in percent, for any option used |
 | `earnings.minDaysSinceLast`, `earnings.minDaysUntilNext` | The earnings rule |
-| `strikeSelection` | Slack and margins for choosing which strikes to quote |
+| `universe.minLiquidityRating`, `universe.maxNames` | The funnel for a scan with no list: the lowest tastytrade liquidity rating (1 to 5) and the most names that go on to chains and quotes |
+| `display.timeZone` | Zone for the scan time shown in the report (default `America/New_York`); dates are unaffected |
+| `strikeSelection` | Slack and margins for choosing which strikes to quote. `rateFromSofr` (on by default) takes the risk-free rate from the latest SOFR, published free by the New York Fed and cached for the day; `rate` is the fallback if that cannot be fetched. The rate each run used is saved in it |
 
 ## Using it
 
 ```bash
 # credentials go in a file outside the repository (see "Credentials" below)
-node src/cli.ts scan --symbols SPY,QQQ,IWM,GLD        # or --symbols-file watchlist.txt
+node src/cli.ts scan                                  # every optionable name, through the funnel
+node src/cli.ts scan --symbols SPY,QQQ,IWM,GLD        # or --symbols-file watchlist.txt: exactly those
 node src/cli.ts validate                              # once runs are weeks old
 ```
 
-`scan` prints what it dropped and why, then the best candidates (the best three per underlying by default), and writes the whole ranked result to `runs/`. A 45-symbol scan takes a few seconds with the chain listings cached.
+`scan` prints what it dropped and why, then the best candidates (the best three per underlying by default), and writes the whole ranked result to `runs/`. A scan from the whole market takes about 25 seconds, most of it the chain listings, which are cached for the day.
 
 ### The report
 
@@ -103,9 +114,19 @@ FMP_API_KEY=...
 
 Create a tastytrade OAuth client with the `read` scope only; the scanner never places orders.
 
+## Running it on a schedule
+
+`docker/` runs the scan twice every weekday in a container, saves each ranked result to `runs/` (the log `validate` reads), rebuilds the report and publishes it:
+
+```bash
+node src/cli.ts publish      # upload report/ to S3 (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+```
+
+`infra/cloudformation.yaml` creates the site: a private S3 bucket, CloudFront with a certificate, a Route 53 alias on your domain, an optional password prompt, and a publisher that can only write objects. [docker/README.md](docker/README.md) has the setup, from the stack to the first scheduled run. The publisher signs its own requests, so it adds no dependency.
+
 ## Status
 
-Early. Written and tested: the earnings rule, strike selection, spread pairing, the tastytrade and FMP providers, the scan, the ranking, the validation and the browser report. Still to come: scheduled runs, so the log of inputs that `validate` needs builds up by itself.
+Early. Written and tested: the earnings rule, strike selection, spread pairing, the tastytrade and FMP providers, the scan, the ranking, the validation, the browser report, and the container and stack that run and publish it. The weights are still a guess until `validate` has weeks of runs to check them against.
 
 ## Development
 

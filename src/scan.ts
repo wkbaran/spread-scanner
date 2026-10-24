@@ -3,10 +3,11 @@ import { addDays, dateWindows, daysBetween, easternDate } from './dates.ts';
 import { earningsVerdict, requiredCoverage } from './earnings.ts';
 import type { DailyBar, EarningsRow } from './providers/fmp.ts';
 import type { InstrumentFlags, ListedContract, OptionQuoteData, SymbolMetrics } from './providers/tastytrade.ts';
+import { preScores } from './rank.ts';
 import { pairSpreads, whyNoSpread } from './spread.ts';
 import { strikesToQuote } from './strikes.ts';
 import { historicalVolatility } from './volatility.ts';
-import type { Candidate, Dropped, Quote, ScanResult, ScannerConfig, Side, SymbolInfo } from './types.ts';
+import type { Candidate, Dropped, FunnelStage, Quote, ScanResult, ScannerConfig, Side, SymbolInfo } from './types.ts';
 
 export interface TastytradeLike {
   metrics(symbols: string[]): Promise<Map<string, SymbolMetrics>>;
@@ -27,10 +28,20 @@ export interface ScanDeps {
   cache: Cache;
   now?: Date;
   log?: (message: string) => void;
+  /**
+   * Set when the symbols are every optionable name rather than a list someone chose: the
+   * liquidity rating and the cap on names then apply (config `universe`). An explicit list is
+   * never thinned.
+   */
+  funnel?: boolean;
+  /** Where `cfg.strikeSelection.rate` came from, recorded in the saved run. */
+  rateSource?: string;
 }
 
 /** An IV index above this (300%) is a stale or illiquid print, and would ask for hundreds of strikes. */
 const MAX_SIGMA = 3;
+/** A probe's own volatility below this (5%) is a stale print, not a wing, and the index is used instead. */
+const MIN_WING_SIGMA = 0.05;
 const CALENDAR_WINDOW_DAYS = 3;
 const CALENDAR_TTL_MS = 12 * 3_600_000;
 const CHAIN_TTL_MS = 20 * 3_600_000;
@@ -60,10 +71,18 @@ export async function scan(symbols: string[], cfg: ScannerConfig, deps: ScanDeps
     dropped.set(reason, [...(dropped.get(reason) ?? []), symbol]);
   };
 
-  const universe = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter((s) => s !== ''))];
+  let universe = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter((s) => s !== ''))];
   log(`${universe.length} symbols`);
+  const funnel: FunnelStage[] = [];
 
   const metrics = await tt.metrics(universe);
+  if (deps.funnel === true) {
+    // Counted, not listed: thousands of names would bury the ones whose drop is worth reading.
+    funnel.push({ label: 'optionable stocks and funds', count: universe.length });
+    universe = universe.filter((s) => (metrics.get(s)?.liquidityRating ?? 0) >= cfg.universe.minLiquidityRating);
+    funnel.push({ label: `liquidity rating ${cfg.universe.minLiquidityRating} or better`, count: universe.length });
+    log(`${universe.length} of ${funnel[0]?.count ?? 0} have a liquidity rating of ${cfg.universe.minLiquidityRating} or better`);
+  }
   let alive = universe.filter((s) => metrics.has(s) || (drop('no metrics from tastytrade', s), false));
 
   const flags = await tt.instruments(alive);
@@ -122,6 +141,17 @@ export async function scan(symbols: string[], cfg: ScannerConfig, deps: ScanDeps
   });
   log(`${alive.length} pass the earnings and metrics filters`);
 
+  if (deps.funnel === true) {
+    funnel.push({ label: 'pass the earnings rule', count: alive.length });
+    if (alive.length > cfg.universe.maxNames) {
+      const scores = preScores(alive.map((s) => info.get(s) as SymbolInfo), cfg.ranking.weights);
+      const order = new Map(alive.map((s, i) => [s, scores[i] as number] as const));
+      alive = [...alive].sort((a, b) => (order.get(b) as number) - (order.get(a) as number) || a.localeCompare(b)).slice(0, cfg.universe.maxNames);
+      log(`kept the ${alive.length} with the richest IV for the chains`);
+    }
+    funnel.push({ label: `richest IV, up to ${cfg.universe.maxNames}`, count: alive.length });
+  }
+
   const spots = await tt.equityQuotes(alive);
   alive = alive.filter((s) => {
     const spot = spots.get(s);
@@ -132,34 +162,57 @@ export async function scan(symbols: string[], cfg: ScannerConfig, deps: ScanDeps
 
   // Chain listings (cached for the day), then only the contracts a short or long leg could be.
   type Plan = { symbol: string; side: Side; expiration: string; dte: number; contracts: Map<number, string> };
-  const plans: Plan[] = [];
-  alive = (
-    await Promise.all(
-      alive.map(async (symbol) => {
-        const listing = await cache.getOrFetch(`chain-${symbol}`, CHAIN_TTL_MS, () => tt.chainListing(symbol));
-        const i = info.get(symbol) as SymbolInfo;
-        let any = false;
-        for (const expiration of new Set(listing.map((c) => c.expiration))) {
-          const dte = daysBetween(today, expiration);
-          if (dte < cfg.dte.min || dte > cfg.dte.max) continue;
-          for (const side of SIDES) {
-            const sideContracts = listing.filter((c) => c.expiration === expiration && c.side === side);
-            const byStrike = new Map(sideContracts.map((c) => [c.strike, c.occ] as const));
-            const strikes = strikesToQuote([...byStrike.keys()].sort((a, b) => a - b), { spot: i.spot, sigma: i.ivIndex as number, years: dte / 365, rate: cfg.strikeSelection.rate }, side, cfg);
-            if (strikes.length === 0) continue;
-            plans.push({ symbol, side, expiration, dte, contracts: new Map(strikes.map((k) => [k, byStrike.get(k) as string] as const)) });
-            any = true;
-          }
-        }
-        if (!any) drop('no expiration in the DTE window', symbol);
-        return any ? symbol : null;
-      }),
-    )
-  ).filter((s): s is string => s !== null);
+  const listings = new Map<string, ListedContract[]>();
+  await Promise.all(alive.map(async (symbol) => void listings.set(symbol, await cache.getOrFetch(`chain-${symbol}`, CHAIN_TTL_MS, () => tt.chainListing(symbol)))));
 
-  const occs = plans.flatMap((p) => [...p.contracts.values()]);
-  log(`${alive.length} names, ${occs.length} contracts to quote`);
-  const quoted = await tt.optionQuotes(occs);
+  // Which contracts to quote depends on how far out the target deltas sit, which depends on the volatility
+  // the options really trade at. The IV index is the at-the-money figure, and a wing can sit far from it
+  // (SPY's 30-day index was 19.8% while its calls at 0.2 delta traded near 13%), so a band sized from the
+  // index misses the near end of the range. So: size a first band from the index, quote one probe contract
+  // at its near edge to read the wing's own volatility, and size the real band from that.
+  const makePlans = (sigmaFor: (symbol: string, side: Side, expiration: string) => number): Plan[] => {
+    const out: Plan[] = [];
+    for (const symbol of alive) {
+      const i = info.get(symbol) as SymbolInfo;
+      const listing = listings.get(symbol) ?? [];
+      for (const expiration of new Set(listing.map((c) => c.expiration))) {
+        const dte = daysBetween(today, expiration);
+        if (dte < cfg.dte.min || dte > cfg.dte.max) continue;
+        for (const side of SIDES) {
+          const byStrike = new Map(listing.filter((c) => c.expiration === expiration && c.side === side).map((c) => [c.strike, c.occ] as const));
+          const strikes = strikesToQuote([...byStrike.keys()].sort((a, b) => a - b), { spot: i.spot, sigma: sigmaFor(symbol, side, expiration), years: dte / 365, rate: cfg.strikeSelection.rate }, side, cfg);
+          if (strikes.length === 0) continue;
+          out.push({ symbol, side, expiration, dte, contracts: new Map(strikes.map((k) => [k, byStrike.get(k) as string] as const)) });
+        }
+      }
+    }
+    return out;
+  };
+  const key = (symbol: string, side: Side, expiration: string): string => `${symbol}|${side}|${expiration}`;
+
+  const firstPass = makePlans((symbol) => (info.get(symbol) as SymbolInfo).ivIndex as number);
+  // The near edge is the contract closest to the money: the lowest call strike, the highest put strike.
+  const probeOccs = new Map(
+    firstPass.map((p) => {
+      const strikes = [...p.contracts.keys()];
+      const near = p.side === 'call' ? Math.min(...strikes) : Math.max(...strikes);
+      return [key(p.symbol, p.side, p.expiration), p.contracts.get(near) as string] as const;
+    }),
+  );
+  const probed = await tt.optionQuotes([...probeOccs.values()]);
+  const wingSigma = new Map<string, number>();
+  for (const [k, occ] of probeOccs) {
+    const iv = probed.get(occ)?.iv;
+    if (iv !== null && iv !== undefined && iv >= MIN_WING_SIGMA && iv <= MAX_SIGMA) wingSigma.set(k, iv);
+  }
+  const plans = makePlans((symbol, side, expiration) => wingSigma.get(key(symbol, side, expiration)) ?? ((info.get(symbol) as SymbolInfo).ivIndex as number));
+
+  for (const symbol of alive) if (!plans.some((p) => p.symbol === symbol)) drop('no expiration in the DTE window', symbol);
+  alive = alive.filter((symbol) => plans.some((p) => p.symbol === symbol));
+
+  const occs = plans.flatMap((p) => [...p.contracts.values()]).filter((o) => !probed.has(o));
+  log(`${alive.length} names, ${occs.length + probed.size} contracts to quote`);
+  const quoted = new Map([...probed, ...(await tt.optionQuotes(occs))]);
 
   const quotes = new Map<string, Quote[]>();
   for (const plan of plans) {
@@ -201,5 +254,17 @@ export async function scan(symbols: string[], cfg: ScannerConfig, deps: ScanDeps
   }
 
   const droppedList: Dropped[] = [...dropped].map(([reason, list]) => ({ reason, symbols: list.sort() })).sort((a, b) => b.symbols.length - a.symbols.length);
-  return { schema: 'spread-scanner/scan@1', generatedAt: now.toISOString(), today, config: cfg, universe: universe.length, dropped: droppedList, symbols: kept, candidates };
+  if (deps.funnel === true) funnel.push({ label: 'have a spread that passes', count: Object.keys(kept).length });
+  return {
+    schema: 'spread-scanner/scan@1',
+    generatedAt: now.toISOString(),
+    today,
+    config: cfg,
+    universe: universe.length,
+    ...(deps.rateSource === undefined ? {} : { rate: { value: cfg.strikeSelection.rate, source: deps.rateSource } }),
+    ...(deps.funnel === true ? { funnel } : {}),
+    dropped: droppedList,
+    symbols: kept,
+    candidates,
+  };
 }

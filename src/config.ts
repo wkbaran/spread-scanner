@@ -26,6 +26,14 @@ export function validateConfig(c: ScannerConfig): ScannerConfig {
   if (!(c.width.min > 0 && c.width.min <= c.width.max)) fail('width.min must be positive and no larger than width.max');
   if (!(c.maxLegSpreadPct > 0)) fail('maxLegSpreadPct must be positive');
   if (!(c.delta.min - c.strikeSelection.deltaSlack > 0)) fail('strikeSelection.deltaSlack must be smaller than delta.min');
+  if (!(c.universe.minLiquidityRating >= 0 && c.universe.minLiquidityRating <= 5)) fail('universe.minLiquidityRating must be between 0 and 5');
+  if (!(c.strikeSelection.rate >= 0 && c.strikeSelection.rate <= 0.2)) fail('strikeSelection.rate is an annual rate as a fraction, e.g. 0.04');
+  if (!(Number.isInteger(c.universe.maxNames) && c.universe.maxNames >= 1)) fail('universe.maxNames must be a whole number of at least 1');
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: c.display.timeZone });
+  } catch {
+    fail(`display.timeZone is not a time zone name: ${String(c.display.timeZone)} (use e.g. America/New_York)`);
+  }
   const w = Object.values(c.ranking.weights);
   if (w.some((x) => !(x >= 0)) || !(w.reduce((a, b) => a + b, 0) > 0)) fail('ranking.weights must be non-negative and not all zero');
   return c;
