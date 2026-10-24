@@ -138,7 +138,10 @@
   .summary { margin: 0 0 1rem; max-width: 62ch; color: var(--sub); }
   .summary strong { color: var(--ink); font-weight: 650; }
   .key { margin: -0.5rem 0 1rem; max-width: 70ch; }
-  .table-wrap { overflow-x: clip; }
+  /* Every column is always there; a table wider than its room scrolls sideways. The symbol and the score
+     stay pinned either side, so a row is still readable and still shows what it scores. On a wide window the
+     wrapper is also the vertical scroller (see the media query below), so the header can stay put. */
+  .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
   thead th {
     position: sticky; top: 0; z-index: 2; background: var(--ground);
@@ -154,6 +157,14 @@
   thead th[aria-sort="descending"] button::after { content: "↓"; }
   tbody tr.item td { padding: 0.5rem 0.55rem; border-bottom: 1px solid var(--line); text-align: right; vertical-align: middle; white-space: nowrap; }
   tbody tr.item td.left { text-align: left; }
+  /* child combinators: the opened row's legs table has its own thead, which must not be pinned */
+  .table-wrap > table > thead > tr > th:first-child, .table-wrap > table > tbody > tr.item > td:first-child { position: sticky; left: 0; background: var(--row-bg, var(--ground)); }
+  .table-wrap > table > thead > tr > th:last-child, .table-wrap > table > tbody > tr.item > td:last-child { position: sticky; right: 0; background: var(--row-bg, var(--ground)); }
+  .table-wrap > table > tbody > tr.item > td:first-child, .table-wrap > table > tbody > tr.item > td:last-child { z-index: 1; }
+  .table-wrap > table > thead > tr > th:last-child, .table-wrap > table > tbody > tr.item > td:last-child { box-shadow: inset 1px 0 0 var(--line); }
+  .table-wrap > table > thead > tr > th:first-child, .table-wrap > table > thead > tr > th:last-child { z-index: 3; }
+  /* the pinned cells take their row's colour from this, since they need an opaque background of their own */
+  tbody tr.item:hover, tbody tr.item.open { --row-bg: var(--surface); }
   tbody tr.item:hover td { background: var(--surface); }
   tbody tr.item.open td { background: var(--surface); border-bottom-color: transparent; }
   tbody tr.item.open td:first-child { box-shadow: inset 3px 0 0 var(--signal); }
@@ -231,21 +242,22 @@
   .pal-reset { font-size: 0.75rem; }
 
   /* ---- the list adapts to the room it has, not to the window ------------
-     The rail is a fixed width, so a window width says little about the table's. The wrapper is a
-     size container and the columns drop out by its width: all ten need about 1140px, seven need
-     about 880px, five need about 700px, and below that the phone layout takes over. */
+     The rail is a fixed width, so a window width says little about the table's. The wrapper is a size
+     container, and what changes with its width is how compactly the rows are set, never which columns show. */
   .table-wrap { container: list / inline-size; }
-  .detail-grid { width: 100%; contain: inline-size; }
+  .detail-grid { box-sizing: border-box; width: calc(100cqw - var(--scrollbar, 0px)); position: sticky; left: 0; contain: inline-size; }
   .short { display: none; }
   @container list (max-width: 1150px) {
-    .col-opt { display: none; }
     .detail-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .detail-grid > :first-child { grid-column: 1 / -1; }
   }
-  @container list (max-width: 890px) {
-    .col-mid { display: none; }
+  @container list (max-width: 1250px) {
+    .ruler { width: 134px; height: auto; }
+    .long { display: none; }
+    .short { display: inline; }
   }
-  @container list (max-width: 700px) {
+  @container list (max-width: 1000px) { .ruler { width: 118px; height: auto; } }
+  @container list (max-width: 740px) {
     .tag { display: none; }
     .ruler { width: 72px; height: auto; }
     table { font-size: 0.86rem; }
@@ -257,16 +269,17 @@
     td.left .two small { white-space: normal; }
     .days { display: none; }
     .strikes { white-space: nowrap; }
-    .long { display: none; }
-    .short { display: inline; }
     .sym { gap: 0.3rem; }
     .sym::before { width: 0.6rem; }
     .detail-grid { grid-template-columns: minmax(0, 1fr); padding-left: 0.7rem; padding-right: 0.7rem; }
     .legs .leg-opt { display: none; }
     .legs th, .legs td { padding: 0.3rem 0.35rem; }
   }
-  @container list (max-width: 400px) { .ruler { width: 58px; } }
-  @container list (max-width: 340px) { .col-ruler { display: none; } }
+  @container list (max-width: 400px) { .ruler { width: 48px; } }
+
+  /* With the rail beside it the table has the window's height to itself: it scrolls inside its own box, so the
+     header row stays put while the list moves and the page behind it is not what slides. */
+  @media (min-width: 861px) { .table-wrap { overflow-y: auto; max-height: calc(100vh - 1.6rem); } }
 
   /* ---- narrow windows: the rail folds into a top bar ----------------------- */
   @media (max-width: 860px) {
@@ -280,7 +293,6 @@
     .controls[open] > summary::after { content: "–"; }
     .controls[open] { gap: 1rem; }
     main { padding: 1.2rem 0.8rem 6rem; }
-    .table-wrap { overflow-x: auto; }
     thead th { position: static; }
     .pal { left: 1rem; }
     /* the Light/Dark button joins the title row; the swatch stays at the lower left, as in equity-watch */

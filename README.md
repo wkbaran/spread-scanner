@@ -85,7 +85,7 @@ One self-contained page: open `report/index.html` straight from disk, no server.
 - **Weight sliders** re-rank the list as you move them. Open a row to see its legs, the underlying's figures and how each component ranked.
 - **A palette picker and a Light/Dark button**, the same control as equity-watch's.
 
-The page works down to a 320px phone: columns drop out by the room the table has, and the opened row carries what the table drops.
+The page works down to a 320px phone. Every column is always there: when the table is wider than its room it scrolls sideways, with the symbol and the score pinned either side, and the opened row stays in view while it does.
 
 ### Ranking
 

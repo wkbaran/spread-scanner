@@ -70,6 +70,8 @@ test('components: IV over realised vol, natural return on risk, worst leg spread
   close(k.distance, 10 / (100 * 0.3 * Math.sqrt(c.spread.dte / 365)), 1e-12);
   assert.equal(components(c, info({ hv30: null, hv60: null, hv90: null })).ivOverHv, null);
   assert.equal(components(c, info({ ivIndex: null })).distance, 0);
+  assert.equal(k.ivRank, 0.5, 'the IV rank travels with the components so the page can show and sort by it');
+  assert.equal(components(c, info({ ivRank: 0.8 })).ivRank, 0.8);
 });
 
 test('ranking: underlying-level figures are ranked across underlyings, so many spreads do not count many times', () => {

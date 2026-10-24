@@ -45,6 +45,7 @@
     pop: [(c) => c.spread.popPct, "desc"],
     slippage: [(c) => c.spread.slippagePct, "asc"],
     legSpread: [(c) => worstLegSpread(c), "asc"],
+    ivRank: [(c) => c.components.ivRank, "desc"],
     ivPercentile: [(c) => c.components.ivPercentile, "desc"],
     ivOverHv: [(c) => c.components.ivOverHv, "desc"],
     distance: [(c) => c.components.distance, "desc"],

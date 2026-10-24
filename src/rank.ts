@@ -48,6 +48,7 @@ export function components(c: Candidate, info: SymbolInfo): Components {
   const blend = blendedVolatility(info);
   const expectedMove = info.ivIndex === null ? null : info.spot * info.ivIndex * Math.sqrt(s.dte / 365);
   return {
+    ivRank: info.ivRank,
     ivPercentile: info.ivPercentile,
     ivOverHv: info.ivIndex !== null && blend !== null ? info.ivIndex / blend : null,
     returnOnRisk: s.creditNatural / (s.width - s.creditNatural),

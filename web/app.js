@@ -196,13 +196,16 @@
   const COLUMNS = [
     { key: "symbol", label: "Symbol", left: true },
     { key: "expiration", label: "Spread", left: true },
-    { key: "distance", label: "Strikes against the stock", short: "Strikes", ruler: true, hint: "Sorts by how many expected moves the short strike is from the stock" },
-    { key: "credit", label: "Credit", mid: true },
+    // Order is priority: a table wider than its room scrolls sideways, so what decides a trade comes first
+    // and the strike ruler, the widest cell, follows the numbers.
     { key: "returnOnRisk", label: "Return on risk", short: "Return" },
-    { key: "pop", label: "Chance of profit", mid: true },
-    { key: "slippage", label: "Slippage", opt: true },
-    { key: "ivPercentile", label: "IV percentile", opt: true },
-    { key: "ivOverHv", label: "IV over realised", opt: true },
+    { key: "pop", label: "Chance of profit", short: "PoP" },
+    { key: "ivPercentile", label: "IV percentile", short: "IV pctl" },
+    { key: "distance", label: "Strikes against the stock", short: "Strikes", ruler: true, hint: "Sorts by how many expected moves the short strike is from the stock" },
+    { key: "credit", label: "Credit" },
+    { key: "ivRank", label: "IV rank" },
+    { key: "ivOverHv", label: "IV over realised" },
+    { key: "slippage", label: "Slippage" },
     { key: "score", label: "Score" },
   ];
 
@@ -218,7 +221,7 @@
           }
           update();
         });
-        return el("th", { class: `${col.left ? "left" : ""} ${col.opt ? "col-opt" : ""} ${col.mid ? "col-mid" : ""} ${col.ruler ? "col-ruler" : ""}`.trim(), scope: "col", "data-key": col.key, title: col.hint }, button);
+        return el("th", { class: `${col.left ? "left" : ""} ${col.ruler ? "col-ruler" : ""}`.trim(), scope: "col", "data-key": col.key, title: col.hint }, button);
       }),
     );
   }
@@ -269,13 +272,14 @@
       { class: `item${open ? " open" : ""}` },
       el("td", { class: "left" }, toggle),
       el("td", { class: "left" }, el("span", { class: "two" }, el("span", { class: "strikes", text: `${strike(s.short.strike)} / ${strike(s.long.strike)} ${s.side}` }), el("small", {}, `${M.shortDate(s.expiration)}, `, el("span", { class: "days", text: `${s.dte} days, ` }), `${width(s.width)} wide`))),
-      el("td", { class: "col-ruler" }, rulerSvg(c, info)),
-      el("td", { class: "col-mid" }, el("span", { class: "two" }, s.creditMid.toFixed(2), el("small", { text: `${money(s.maxRisk)} at risk` }))),
       el("td", { text: pct(s.profitPct) }),
-      el("td", { class: "col-mid", text: pct(s.popPct) }),
-      el("td", { class: "col-opt", text: pct(s.slippagePct) }),
-      el("td", { class: "col-opt", text: c.components.ivPercentile === null ? "–" : num(c.components.ivPercentile * 100) }),
-      el("td", { class: "col-opt", text: c.components.ivOverHv === null ? "–" : c.components.ivOverHv.toFixed(2) }),
+      el("td", { text: pct(s.popPct) }),
+      el("td", { text: c.components.ivPercentile === null ? "–" : num(c.components.ivPercentile * 100) }),
+      el("td", { class: "col-ruler" }, rulerSvg(c, info)),
+      el("td", {}, el("span", { class: "two" }, s.creditMid.toFixed(2), el("small", { text: `${money(s.maxRisk)} at risk` }))),
+      el("td", { text: c.components.ivRank === null || c.components.ivRank === undefined ? "–" : num(c.components.ivRank * 100) }),
+      el("td", { text: c.components.ivOverHv === null ? "–" : c.components.ivOverHv.toFixed(2) }),
+      el("td", { text: pct(s.slippagePct) }),
       el("td", {}, el("span", { class: "score" }, el("b", { text: String(Math.round(c.score * 100)) }), el("i", { style: `--w:${Math.round(c.score * 100)}%` }))),
     );
     if (!open) return [tr];
@@ -359,10 +363,22 @@
 
   const DIRECTION_WORDS = { symbol: { asc: "A to Z", desc: "Z to A" }, expiration: { asc: "soonest first", desc: "latest first" } };
 
+  /**
+   * The opened row's panel is as wide as the visible table, not the whole scrollable one, so it stays in
+   * view while the table is scrolled sideways. The CSS asks for the container's width, which counts the
+   * vertical scrollbar, so the scrollbar's width is measured here and taken off.
+   */
+  function measureScrollbar() {
+    const wrap = $("table-wrap");
+    wrap.style.setProperty("--scrollbar", `${wrap.offsetWidth - wrap.clientWidth}px`);
+  }
+  new ResizeObserver(measureScrollbar).observe($("table-wrap"));
+
   function render() {
     const list = M.visible(scan, state.weights, state.filters, state.sortKey, state.sortDir);
     const body = $("body");
     body.replaceChildren(...list.flatMap(row));
+    measureScrollbar();
     for (const th of $("head").children) {
       if (th.dataset.key === state.sortKey) th.setAttribute("aria-sort", state.sortDir === "asc" ? "ascending" : "descending");
       else th.removeAttribute("aria-sort");

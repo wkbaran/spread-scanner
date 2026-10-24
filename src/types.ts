@@ -156,6 +156,8 @@ export interface RankWeights {
 
 /** The raw figures behind a score. Null where the data was not available. */
 export interface Components {
+  /** Where IV sits in its year's range, 0 to 1. Shown beside the percentile, not scored. Absent in runs saved before it was kept. */
+  ivRank?: number | null;
   ivPercentile: number | null;
   ivOverHv: number | null;
   returnOnRisk: number;

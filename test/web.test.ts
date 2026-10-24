@@ -72,6 +72,11 @@ test('sorting: best first by default, the other way on request, missing values l
   const sorted = M.sortCandidates(gappy, 'ivOverHv', 'desc') as RankedCandidate[];
   assert.equal(sorted.at(-1)!.components.ivOverHv, null);
   assert.equal((M.sortCandidates(gappy, 'ivOverHv', 'asc') as RankedCandidate[]).at(-1)!.components.ivOverHv, null, 'also last when ascending');
+  // IV rank: runs saved before it was kept have none, and sort last rather than breaking the sort
+  const ranked = s.candidates.map((c, i) => (i === 0 ? c : { ...c, components: { ...c.components, ivRank: 0.1 * i } }));
+  const byRank = M.sortCandidates(ranked, 'ivRank', 'desc') as RankedCandidate[];
+  assert.deepEqual(plain(byRank.slice(0, 3).map((c) => c.components.ivRank)), [0.30000000000000004, 0.2, 0.1]);
+  assert.equal(byRank.at(-1)!.components.ivRank, undefined);
   assert.equal(M.defaultDirection('score'), 'desc');
   assert.equal(M.defaultDirection('slippage'), 'asc');
 });
