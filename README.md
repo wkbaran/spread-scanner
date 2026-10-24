@@ -82,7 +82,7 @@ One self-contained page: open `report/index.html` straight from disk, no server.
 
 - **Every row has a strike ruler.** The line is the stock, the shaded band is one expected move either side of it (the short option's own IV over the days left, the volatility its delta was computed with), and the bar runs from the short strike to the long strike. Puts sit left of the stock and calls right, on one shared scale of plus or minus 1.5 expected moves (an arrow marks a strike beyond it), so rows compare at a glance. A short strike at 0.15 to 0.25 delta sits at roughly 0.7 to 1 expected move by construction, so most spreads land inside the band.
 - **Filters** for side, spread width (a chip for each width the scan found), expiration, stocks or funds, and minimums or maximums on return, chance of profit, IV percentile, IV over realised vol, slippage and the widest bid-ask. The list shows the best three of each symbol unless you ask for more.
-- **Weight sliders** re-rank the list as you move them. Open a row to see its legs, the underlying's figures and how each component ranked.
+- **Weight sliders** re-rank the list as you move them. Open a row to see its legs with their greeks and the net greeks of the spread, the underlying's figures and how each component ranked. Hover a column title for what it means.
 - **A palette picker and a Light/Dark button**, the same control as equity-watch's.
 
 The page works down to a 320px phone. Every column is always there: when the table is wider than its room it scrolls sideways, with the symbol and the score pinned either side, and the opened row stays in view while it does.

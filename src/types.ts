@@ -11,6 +11,11 @@ export interface Quote {
   bid: number;
   ask: number;
   delta: number;
+  /** The other greeks, per share (theta per day, vega per volatility point). Absent in runs saved before they were kept, null if not sent. */
+  gamma?: number | null;
+  theta?: number | null;
+  vega?: number | null;
+  rho?: number | null;
   /** Implied volatility as a fraction (0.31 is 31%). */
   iv: number;
   openInterest: number;

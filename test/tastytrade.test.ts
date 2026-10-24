@@ -136,7 +136,7 @@ test('option quotes: 100 a request, spaces encoded, fields parsed, incomplete qu
     requested.push(list);
     return { data: { items: list.map((symbol, i) => (i === 0
       ? { symbol, bid: null, ask: '1.0', delta: '-0.2' } // no bid: unusable
-      : { symbol, bid: '0.52', ask: '0.56', delta: '-0.174708982', volatility: '0.3157', 'open-interest': 749, volume: '138.0' })) } };
+      : { symbol, bid: '0.52', ask: '0.56', delta: '-0.174708982', gamma: '0.0123', theta: '-0.0456', vega: '0.0789', rho: '-0.0101', volatility: '0.3157', 'open-interest': 749, volume: '138.0' })) } };
   });
   const symbols = Array.from({ length: 230 }, (_, i) => occ('NFLX', '2026-11-20', 'put', 20 + i / 10));
   const quotes = await new Tastytrade(credentials, instantHttp(fetch)).optionQuotes(symbols);
@@ -144,7 +144,14 @@ test('option quotes: 100 a request, spaces encoded, fields parsed, incomplete qu
   assert.ok(calls.some((c) => c.url.includes('NFLX%20%20261120P')));
   assert.equal(quotes.size, 227); // the first symbol of each batch had no bid
   const q = quotes.get(symbols[1] as string);
-  assert.deepEqual(q, { bid: 0.52, ask: 0.56, delta: -0.174708982, iv: 0.3157, openInterest: 749, volume: 138 });
+  assert.deepEqual(q, { bid: 0.52, ask: 0.56, delta: -0.174708982, gamma: 0.0123, theta: -0.0456, vega: 0.0789, rho: -0.0101, iv: 0.3157, openInterest: 749, volume: 138 });
+});
+
+test('a quote with no greeks beyond delta is still a quote; the missing ones are null, not zero', async () => {
+  const { fetch } = api(() => ({ data: { items: [{ symbol: occ('SPY', '2026-12-04', 'call', 790), bid: '4.01', ask: '4.09', delta: '0.21', volatility: '0.135' }] } }));
+  const q = (await new Tastytrade(credentials, instantHttp(fetch)).optionQuotes([occ('SPY', '2026-12-04', 'call', 790)])).values().next().value;
+  assert.deepEqual([q?.gamma, q?.theta, q?.vega, q?.rho], [null, null, null, null]);
+  assert.equal(q?.delta, 0.21);
 });
 
 test('discovery: pages of 1000 until a short page, optionable and not closing-only', async () => {

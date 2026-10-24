@@ -198,15 +198,15 @@
     { key: "expiration", label: "Spread", left: true },
     // Order is priority: a table wider than its room scrolls sideways, so what decides a trade comes first
     // and the strike ruler, the widest cell, follows the numbers.
-    { key: "returnOnRisk", label: "Return on risk", short: "Return" },
-    { key: "pop", label: "Chance of profit", short: "PoP" },
-    { key: "ivPercentile", label: "IV percentile", short: "IV pctl" },
+    { key: "returnOnRisk", label: "Return on risk", short: "Return", hint: "The credit at the mid price over the most you can lose" },
+    { key: "pop", label: "Chance of profit", short: "PoP", hint: "The chance the spread finishes at a profit at expiration, read from the options' delta at the break-even" },
+    { key: "ivPercentile", label: "IV percentile", short: "IV pctl", hint: "The share of the past year that implied volatility was lower than it is now" },
     { key: "distance", label: "Strikes against the stock", short: "Strikes", ruler: true, hint: "Sorts by how many expected moves the short strike is from the stock" },
-    { key: "credit", label: "Credit" },
-    { key: "ivRank", label: "IV rank" },
-    { key: "ivOverHv", label: "IV over realised" },
-    { key: "slippage", label: "Slippage" },
-    { key: "score", label: "Score" },
+    { key: "credit", label: "Credit", hint: "The credit at the mid price. Under it, the most you can lose" },
+    { key: "ivRank", label: "IV rank", hint: "Where implied volatility sits between its low and its high of the past year" },
+    { key: "ivOverHv", label: "IV over realised", hint: "Implied volatility over the average of the 30, 60 and 90 day realised volatility. Above 1 the options cost more than the stock has been moving" },
+    { key: "slippage", label: "Slippage", hint: "How much less credit you get trading at the worst prices, selling the short leg at the bid and buying the long leg at the ask, than at the mid" },
+    { key: "score", label: "Score", hint: "The weighted average of the component ranks. The weights are in the rail" },
   ];
 
   function buildHead() {
@@ -298,13 +298,19 @@
   function detailBlock(c, info) {
     const s = c.spread;
     const r = M.ruler(c, info);
+    // Per share, and signed as quoted: a put's delta is negative. The net line is the leg bought minus the leg sold.
+    const GREEK_DIGITS = { delta: 3, gamma: 4, theta: 3, vega: 3, rho: 3 };
+    const greek = (v, g) => (v === null || v === undefined ? "–" : v.toFixed(GREEK_DIGITS[g]));
     const leg = (label, q) =>
-      el("tr", {}, el("td", { text: `${label} ${strike(q.strike)}` }), el("td", { text: q.bid.toFixed(2) }), el("td", { text: q.ask.toFixed(2) }), el("td", { class: "leg-opt", text: ((q.bid + q.ask) / 2).toFixed(2) }), el("td", { text: bidAsk(q) }), el("td", { text: Math.abs(q.delta).toFixed(2) }), el("td", { text: q.iv ? frac(q.iv) : "–" }), el("td", { text: q.openInterest.toLocaleString("en-US") }), el("td", { class: "leg-opt", text: q.volume.toLocaleString("en-US") }));
+      el("tr", {}, el("td", { text: `${label} ${strike(q.strike)}` }), el("td", { text: q.bid.toFixed(2) }), el("td", { text: q.ask.toFixed(2) }), el("td", { class: "leg-opt", text: ((q.bid + q.ask) / 2).toFixed(2) }), el("td", { text: bidAsk(q) }), el("td", { text: q.iv ? frac(q.iv) : "–" }), ...M.GREEKS.map((g) => el("td", { class: g === "gamma" || g === "rho" ? "leg-opt" : "", text: greek(q[g], g) })), el("td", { text: q.openInterest.toLocaleString("en-US") }), el("td", { class: "leg-opt", text: q.volume.toLocaleString("en-US") }));
+    const net = M.netGreeks(s);
+    const netRow = el("tr", { class: "net" }, el("td", { text: "Net" }), el("td"), el("td"), el("td", { class: "leg-opt" }), el("td"), el("td"), ...M.GREEKS.map((g) => el("td", { class: g === "gamma" || g === "rho" ? "leg-opt" : "", text: net ? greek(net[g], g) : "–" })), el("td"), el("td", { class: "leg-opt" }));
+    const HEADS = ["Leg", "Bid", "Ask", "Mid", "Bid-ask", "IV", "Delta", "Gamma", "Theta", "Vega", "Rho", "Open int.", "Volume"];
     const legs = el(
       "table",
       { class: "legs" },
-      el("thead", {}, el("tr", {}, ...["Leg", "Bid", "Ask", "Mid", "Bid-ask", "Delta", "IV", "Open int.", "Volume"].map((h) => el("th", { text: h, class: h === "Mid" || h === "Volume" ? "leg-opt" : "" })))),
-      el("tbody", {}, leg("Sell", s.short), leg("Buy", s.long)),
+      el("thead", {}, el("tr", {}, ...HEADS.map((h) => el("th", { text: h, class: ["Mid", "Gamma", "Rho", "Volume"].includes(h) ? "leg-opt" : "" })))),
+      el("tbody", {}, leg("Sell", s.short), leg("Buy", s.long), netRow),
     );
     const facts = (pairs) => el("dl", { class: "facts" }, ...pairs.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })]));
 
@@ -338,21 +344,17 @@
     return el(
       "div",
       { class: "detail-grid" },
-      el("div", {}, el("h3", { text: "The two legs" }), el("div", { class: "legs-wrap" }, legs), el("div", { style: "height:.9rem" }), facts([
-        ["Credit at the mid", s.creditMid.toFixed(2)],
-        ["Credit at the bid and ask", `${s.creditNatural.toFixed(2)}, ${pct(s.slippagePct)} less`],
-        ["Most you can lose", money(s.maxRisk)],
+      el("div", { class: "detail-legs" }, el("h3", { text: "The two legs" }), el("div", { class: "legs-wrap" }, legs), el("p", { class: "note legs-note", text: "Per share. Theta is per day, vega per point of volatility. Net is what you hold: the leg bought minus the leg sold." })),
+      el("div", {}, el("h3", { text: "The spread" }), facts([
+        ["Credit at the bid and ask", `${s.creditNatural.toFixed(2)}, ${pct(s.slippagePct)} less than the mid`],
         ["Break-even", s.breakeven.toFixed(2)],
-        ["Chance of profit", `${pct(s.popPct)}, read from the delta at the break-even`],
         ["Short strike from the stock", r ? `${r.distance.toFixed(2)} expected moves` : "–"],
       ])),
       el("div", {}, el("h3", { text: `${c.symbol} today` }), facts([
         ["Price", info.spot.toFixed(2)],
         ["IV", frac(info.ivIndex)],
-        ["IV rank and percentile", `${frac(info.ivRank)} and ${frac(info.ivPercentile)}`],
         ["Realised vol, 30 / 60 / 90 days", `${hv}%`],
         ["Where that came from", info.hvSource === "fmp bars" ? "Daily prices" : info.hvSource === "tastytrade" ? "tastytrade" : "–"],
-        ["IV over realised", c.components.ivOverHv === null ? "–" : c.components.ivOverHv.toFixed(2)],
         ["Beta", info.beta === null ? "–" : info.beta.toFixed(2)],
         ["Sector", info.sector || (info.isEtf ? "Fund" : "–")],
         ["Liquidity rating", info.liquidityRating === null ? "–" : `${info.liquidityRating} of 5`],

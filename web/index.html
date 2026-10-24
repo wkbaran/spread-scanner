@@ -198,12 +198,16 @@
 
   /* ---- an opened row ---------------------------------------------------- */
   tr.detail td { padding: 0; border-bottom: 1px solid var(--line-strong); background: var(--surface); }
-  .detail-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); gap: 1.4rem 2.2rem; padding: 0.4rem 1.2rem 1.5rem 1.4rem; }
+  .detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.4rem 2.2rem; padding: 0.4rem 1.2rem 1.5rem 1.4rem; }
   .detail-grid h3 { margin: 0 0 0.5rem; font-size: 0.92rem; font-weight: 650; font-stretch: 88%; }
+  .detail-legs { grid-column: 1 / -1; }
+  .legs td:first-child { white-space: nowrap; }
   .legs-wrap { overflow-x: auto; }
   .legs { width: 100%; font-size: 0.84rem; }
   .legs th, .legs td { padding: 0.3rem 0.65rem; text-align: right; border-bottom: 1px solid var(--line); position: static; background: none; font-size: inherit; }
   .legs th { color: var(--muted); font-weight: 500; }
+  .legs tr.net td { border-top: 1px solid var(--line-strong); font-weight: 600; }
+  .legs-note { margin: 0.4rem 0 0.9rem; max-width: 62ch; }
   .legs th:first-child, .legs td:first-child { text-align: left; }
   dl.facts { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.18rem 1rem; font-size: 0.86rem; }
   dl.facts dt { color: var(--muted); }

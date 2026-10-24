@@ -51,6 +51,11 @@ export interface OptionQuoteData {
   bid: number;
   ask: number;
   delta: number;
+  /** The other greeks, per share: theta per day, vega per volatility point, rho per point of rate. Null when tastytrade sent none. */
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  rho: number | null;
   iv: number;
   openInterest: number;
   volume: number;
@@ -251,6 +256,10 @@ export class Tastytrade {
           bid,
           ask,
           delta,
+          gamma: num(item['gamma']),
+          theta: num(item['theta']),
+          vega: num(item['vega']),
+          rho: num(item['rho']),
           iv: num(item['volatility']) ?? 0,
           openInterest: num(item['open-interest']) ?? 0,
           volume: num(item['volume']) ?? 0,

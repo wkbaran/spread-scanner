@@ -85,7 +85,7 @@ function build(book: Record<string, Fake> = market) {
         if (p === null) continue;
         const symbol = o.slice(0, 6).trim();
         const { price, delta } = blackScholes(p.side, spotOf(symbol), p.strike, book[symbol]?.wingIv ?? 0.3, daysBetween(today, expiration) / 365);
-        out.set(o, { bid: Math.max(0.01, Math.round((price - 0.02) * 100) / 100), ask: Math.round((price + 0.02) * 100) / 100, delta, iv: book[symbol]?.wingIv ?? 0.3, openInterest: 1000, volume: 50 });
+        out.set(o, { bid: Math.max(0.01, Math.round((price - 0.02) * 100) / 100), ask: Math.round((price + 0.02) * 100) / 100, delta, gamma: 0.01, theta: -0.05, vega: 0.4, rho: 0.1, iv: book[symbol]?.wingIv ?? 0.3, openInterest: 1000, volume: 50 });
       }
       return out;
     },
@@ -299,4 +299,11 @@ test('an explicit list is never thinned, and carries no funnel', async () => {
   const result = await scan(Object.keys(book), config({ universe: { minLiquidityRating: 4, maxNames: 1 } }), { tt, fmp, cache: new MemoryCache(), now });
   assert.deepEqual(Object.keys(result.symbols).sort(), ['A', 'B', 'C']);
   assert.equal(result.funnel, undefined);
+});
+
+test('the greeks of both legs travel from the quotes into the saved candidates', async () => {
+  const { tt, fmp } = build();
+  const result = await scan(['AAA'], config(), { tt, fmp, cache: new MemoryCache(), now });
+  const leg = result.candidates[0]!.spread.short;
+  assert.deepEqual([leg.gamma, leg.theta, leg.vega, leg.rho], [0.01, -0.05, 0.4, 0.1]);
 });

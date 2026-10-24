@@ -146,6 +146,24 @@
    * 0.16 delta sits at the edge of the band. The IV index (an at-the-money figure, often far from the
    * wing's) is used only when the option has no IV of its own.
    */
+  const GREEKS = ["delta", "gamma", "theta", "vega", "rho"];
+
+  /**
+   * What the spread holds, per share: the leg bought minus the leg sold, greek by greek. A bull put spread comes
+   * out with a little positive delta and a bear call spread with a little negative, and theta is usually positive
+   * because the sold leg decays faster. Null when either leg lacks any of them (runs saved before they were kept).
+   */
+  function netGreeks(spread) {
+    const out = {};
+    for (const g of GREEKS) {
+      const bought = spread.long[g];
+      const sold = spread.short[g];
+      if (bought === null || bought === undefined || sold === null || sold === undefined) return null;
+      out[g] = bought - sold;
+    }
+    return out;
+  }
+
   function ruler(candidate, info) {
     const s = candidate.spread;
     const iv = s.short.iv > 0 ? s.short.iv : info.ivIndex;
@@ -196,5 +214,7 @@
     ruler,
     shortDate,
     describe,
+    GREEKS,
+    netGreeks,
   };
 })();

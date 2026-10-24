@@ -180,3 +180,22 @@ test('the page template carries its placeholder and loads files that exist', () 
   assert.match(first ?? '', /^#[0-9a-f]{6},#[0-9a-f]{6},#[0-9a-f]{6}$/);
   assert.ok(template.includes(`data-palette="${first}"`), 'the page default is the first preset, so the picker never opens on a palette it does not list');
 });
+
+test('net greeks: the leg bought minus the leg sold, so a bull put spread leans up and a bear call spread leans down', () => {
+  const g = (delta: number, gamma: number, theta: number, vega: number, rho: number) => ({ delta, gamma, theta, vega, rho });
+  const put = ranked('AAA', 0.5, {});
+  const withGreeks = (c: RankedCandidate, sold: ReturnType<typeof g>, bought: ReturnType<typeof g>): RankedCandidate => ({ ...c, spread: { ...c.spread, short: { ...c.spread.short, ...sold }, long: { ...c.spread.long, ...bought } } });
+  // a put spread: puts have negative delta; the sold put is nearer the money, so it has more of everything
+  const bull = M.netGreeks(withGreeks(put, g(-0.2, 0.02, -0.08, 0.5, -0.1), g(-0.15, 0.015, -0.06, 0.4, -0.08)).spread);
+  close(bull.delta, 0.05, 1e-12);
+  close(bull.gamma, -0.005, 1e-12);
+  close(bull.theta, 0.02, 1e-12);
+  close(bull.vega, -0.1, 1e-12);
+  close(bull.rho, 0.02, 1e-12);
+  const bear = M.netGreeks(withGreeks(put, g(0.21, 0.008, -0.12, 0.75, 0.18), g(0.17, 0.007, -0.1, 0.65, 0.15)).spread);
+  close(bear.delta, -0.04, 1e-12);
+  assert.ok(bear.theta > 0, 'the seller collects time decay');
+  // a run saved before the greeks were kept has none, so there is no net to show
+  assert.equal(M.netGreeks(put.spread), null);
+  assert.equal(M.netGreeks(withGreeks(put, g(-0.2, 0.02, -0.08, 0.5, -0.1), { ...g(-0.15, 0.015, -0.06, 0.4, -0.08), vega: null as unknown as number }).spread), null);
+});
