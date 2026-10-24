@@ -163,5 +163,7 @@ test('the page template carries its placeholder and loads files that exist', () 
     assert.ok(template.includes(`src="${asset}"`), `${asset} is loaded by the page`);
     assert.ok(readFileSync(webPath(asset), 'utf8').length > 100, `${asset} exists`);
   }
-  assert.ok(template.includes('data-palette="#0e2a31,#ece4d0,#f3a83b"'), "equity-watch's default palette");
+  const first = /PRESETS = \[\s*\{ name: "[^"]+", colors: \[([^\]]*)\]/.exec(readFileSync(webPath('palette.js'), 'utf8'))?.[1]?.replace(/[" ]/g, '');
+  assert.match(first ?? '', /^#[0-9a-f]{6},#[0-9a-f]{6},#[0-9a-f]{6}$/);
+  assert.ok(template.includes(`data-palette="${first}"`), 'the page default is the first preset, so the picker never opens on a palette it does not list');
 });

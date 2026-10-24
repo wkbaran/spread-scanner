@@ -77,13 +77,20 @@
   const width = (n) => `$${strike(n)}`;
 
   // ---- the scan's header and counts ------------------------------------------------------
+  // The zone the scan was configured to show times in (config display.timeZone). Scans saved before
+  // that setting existed carry none, and are shown in the market's zone.
+  function displayZone() {
+    const zone = scan.config && scan.config.display && scan.config.display.timeZone;
+    return zone || "America/New_York";
+  }
+
   function renderHeader() {
     const when = new Date(scan.generatedAt);
-    const stamp = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(when);
+    const stamp = new Intl.DateTimeFormat("en-US", { timeZone: displayZone(), weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(when);
     const hours = (Date.now() - when.getTime()) / 3_600_000;
     const age = hours < 1 ? "less than an hour ago" : hours < 36 ? `${Math.round(hours)} hours ago` : `${Math.round(hours / 24)} days ago`;
     const stale = hours > 6;
-    $("scan-meta").textContent = `Scanned ${stamp} ET, ${age}. ${stale ? "Prices are from the scan, not live." : ""}`.trim();
+    $("scan-meta").textContent = `Scanned ${stamp}, ${age}. ${stale ? "Prices are from the scan, not live." : ""}`.trim();
     $("scan-meta").classList.toggle("stale", stale);
     $("count-universe").textContent = String(scan.universe);
     $("count-names").textContent = String(Object.keys(scan.symbols).length);
