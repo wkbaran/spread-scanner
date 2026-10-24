@@ -65,6 +65,7 @@ So `scan` makes two quote requests: first one probe contract per name, side and 
 - **The stop is a quarter of the most you can lose** because that is the written rule; the owner's realised losses average a third of it, since stops are checked at the close and gap through. The simulation reproduces the gap on its own (daily monitoring), and still lands a little short on the average loss.
 - **`volEdge` defaults to 0 on purpose.** Drawing the stock at its recent realised volatility would make every name with IV over realised look like a free lunch, which a real record of trades does not support. It is there to be raised deliberately.
 - **It is not in the score.** The ranking weights are unchanged; the three figures are columns (`managedWin`, `needs`, `ev`) the owner can sort by. Folding the edge into the ranking is a separate decision.
+- **spread-book has a CommonJS port of this file** (`sim.js` there, for its exit plan and "from here" odds on open positions). It was duplicated on purpose, because spread-book has no build step. Change one, change the other: spread-book's `test/sim.test.js` runs this file's `simulateManaged`, `drawNormals`, `tradingSchedule`, `normalCdf` and `blackScholes` against the port when the two repos are checked out side by side.
 
 ## The report's starting filters, and the saved view
 
