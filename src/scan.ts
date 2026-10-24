@@ -3,6 +3,7 @@ import { addDays, dateWindows, daysBetween, easternDate } from './dates.ts';
 import { earningsVerdict, requiredCoverage } from './earnings.ts';
 import type { DailyBar, EarningsRow } from './providers/fmp.ts';
 import type { InstrumentFlags, ListedContract, OptionQuoteData, SymbolMetrics } from './providers/tastytrade.ts';
+import { attachOutcomes } from './outcome.ts';
 import { preScores } from './rank.ts';
 import { pairSpreads, whyNoSpread } from './spread.ts';
 import { strikesToQuote } from './strikes.ts';
@@ -253,6 +254,9 @@ export async function scan(symbols: string[], cfg: ScannerConfig, deps: ScanDeps
       log(`no price history for ${symbol} (${error instanceof Error ? error.message : 'error'})`);
     }
   }
+
+  // What each spread is worth to someone who exits early, now that every candidate has its volatilities.
+  attachOutcomes(candidates, kept, cfg.outcome, cfg.strikeSelection.rate, today);
 
   const droppedList: Dropped[] = [...dropped].map(([reason, list]) => ({ reason, symbols: list.sort() })).sort((a, b) => b.symbols.length - a.symbols.length);
   if (deps.funnel === true) funnel.push({ label: 'have a spread that passes', count: Object.keys(kept).length });

@@ -39,18 +39,24 @@
 
   const state = {
     weights: { ...scan.weights },
-    filters: M.emptyFilters(),
+    filters: M.defaultFilters(scan.config),
     sortKey: "score",
     sortDir: "desc",
     open: new Set(),
   };
 
+  // What the filters start at, and whether a remembered view was made against these same starting points.
+  const defaultsKey = JSON.stringify(M.FILTER_KEYS.map((k) => M.defaultFilters(scan.config)[k]));
+  const hasDefaults = M.FILTER_KEYS.some((k) => M.defaultFilters(scan.config)[k] !== null);
+
   // Per-viewer convenience: the filters, weights and sort the person last used. Never required.
+  // Filters remembered under other starting points are dropped, so changing display.filters in the
+  // config takes effect on the next visit instead of being hidden behind an old saved view.
   function restore() {
     try {
       const saved = JSON.parse(localStorage.getItem(VIEW_KEY) || "null");
       if (!saved) return;
-      if (saved.filters) Object.assign(state.filters, saved.filters);
+      if (saved.filters && saved.defaultsKey === defaultsKey) Object.assign(state.filters, saved.filters);
       if (saved.weights && M.WEIGHT_KEYS.every((k) => typeof saved.weights[k] === "number")) state.weights = saved.weights;
       if (saved.sortKey && M.SORTS[saved.sortKey]) {
         state.sortKey = saved.sortKey;
@@ -62,7 +68,7 @@
   }
   function persist() {
     try {
-      localStorage.setItem(VIEW_KEY, JSON.stringify({ filters: state.filters, weights: state.weights, sortKey: state.sortKey, sortDir: state.sortDir }));
+      localStorage.setItem(VIEW_KEY, JSON.stringify({ defaultsKey, filters: state.filters, weights: state.weights, sortKey: state.sortKey, sortDir: state.sortDir }));
     } catch {
       /* the choice just will not be remembered */
     }
@@ -72,6 +78,8 @@
   const num = (n, d = 0) => (n === null || n === undefined || Number.isNaN(n) ? "–" : n.toFixed(d));
   const pct = (n, d = 0) => (n === null || n === undefined ? "–" : `${n.toFixed(d)}%`);
   const frac = (n, d = 0) => (n === null || n === undefined ? "–" : `${(n * 100).toFixed(d)}%`);
+  /** A signed whole-dollar figure: +$4, -$12. */
+  const dollars = (n) => `${n < 0 ? "-" : n > 0 ? "+" : ""}$${Math.abs(Math.round(n))}`;
   const money = (n) => `$${Math.round(n).toLocaleString("en-US")}`;
   const strike = (n) => String(Math.round(n * 1000) / 1000);
   const width = (n) => `$${strike(n)}`;
@@ -138,11 +146,25 @@
     $("w-all").addEventListener("click", () => { state.filters.widths = null; syncFilters(); update(); });
     const reset = () => {
       const keep = state.filters.perUnderlying;
-      state.filters = M.emptyFilters();
+      state.filters = M.defaultFilters(scan.config);
       state.filters.perUnderlying = keep;
       syncFilters();
       update();
     };
+    if (hasDefaults) {
+      $("f-reset").textContent = "Reset to defaults";
+      $("empty-reset").textContent = "Reset to defaults";
+      // with starting limits in place, "reset" no longer shows everything, so there is a button that does
+      const clearAll = el("button", { type: "button", id: "f-clear", text: "Clear all" });
+      clearAll.addEventListener("click", () => {
+        const keep = state.filters.perUnderlying;
+        state.filters = M.emptyFilters();
+        state.filters.perUnderlying = keep;
+        syncFilters();
+        update();
+      });
+      $("f-reset").after(clearAll);
+    }
     $("f-reset").addEventListener("click", reset);
     $("empty-reset").addEventListener("click", reset);
   }
@@ -193,6 +215,15 @@
   }
 
   // ---- the table -------------------------------------------------------------------------
+  // The simulated outcome is for one way of managing a trade; say which, from the scan's own settings.
+  const OUT = scan.config.outcome;
+  const asPct = (f) => `${Math.round(f * 100)}%`;
+  const EXITS = OUT
+    ? `a profit order at ${asPct(OUT.takeProfit)} of the credit, a stop at ${asPct(OUT.stopLoss)} of the most you can lose checked at each close, and out ${OUT.exitDte} days before expiration`
+    : "";
+  const SIMULATED = OUT
+    ? `Simulated: this spread managed with ${EXITS}. The stock is drawn at the options' own volatility, each fill gives up ${asPct(OUT.fillShare)} of the way from the mid to the worst price, and each option's volatility drifts down ${asPct(OUT.ivDecay)} by the exit.`
+    : "Not available for a scan saved before this was simulated.";
   const COLUMNS = [
     { key: "symbol", label: "Symbol", left: true },
     { key: "expiration", label: "Spread", left: true },
@@ -200,8 +231,11 @@
     // and the strike ruler, the widest cell, follows the numbers.
     { key: "returnOnRisk", label: "Return on risk", short: "Return", hint: "The credit at the mid price over the most you can lose" },
     { key: "pop", label: "Chance of profit", short: "PoP", hint: "The chance the spread finishes at a profit at expiration, read from the options' delta at the break-even" },
+    { key: "managedWin", label: "Win rate, your exits", short: "Win", hint: `${SIMULATED} This is the share of simulated runs that end in a profit. It is not the chance of profit: that is the chance of finishing profitable at expiration, which a trade you exit early never reaches.` },
+    { key: "needs", label: "Break-even win rate", short: "Needs", hint: "The win rate at which this spread's average win and average loss cancel, under the same exits. A win rate above it pays; below it does not. Compare with the win rate next to it." },
     { key: "ivPercentile", label: "IV percentile", short: "IV pctl", hint: "The share of the past year that implied volatility was lower than it is now" },
     { key: "distance", label: "Strikes against the stock", short: "Strikes", ruler: true, hint: "Sorts by how many expected moves the short strike is from the stock" },
+    { key: "ev", label: "Expected P&L", short: "EV", hint: `The simulated average result of one spread, in dollars per contract, under the same exits and costs. ${SIMULATED}` },
     { key: "credit", label: "Credit", hint: "The credit at the mid price. Under it, the most you can lose" },
     { key: "ivRank", label: "IV rank", hint: "Where implied volatility sits between its low and its high of the past year" },
     { key: "ivOverHv", label: "IV over realised", hint: "Implied volatility over the average of the 30, 60 and 90 day realised volatility. Above 1 the options cost more than the stock has been moving" },
@@ -288,8 +322,11 @@
       el("td", { class: "left" }, el("span", { class: "two" }, strikesLabel(c), el("small", {}, `${M.shortDate(s.expiration)}, `, el("span", { class: "days", text: `${s.dte} days, ` }), `${width(s.width)} wide`))),
       el("td", { text: pct(s.profitPct) }),
       el("td", { text: pct(s.popPct) }),
+      el("td", { text: c.outcome ? pct(c.outcome.winRate) : "–" }),
+      el("td", { text: c.outcome ? pct(c.outcome.breakEvenWinRate) : "–", class: c.outcome && c.outcome.winRate >= c.outcome.breakEvenWinRate ? "above" : "" }),
       el("td", { text: c.components.ivPercentile === null ? "–" : num(c.components.ivPercentile * 100) }),
       el("td", { class: "col-ruler" }, rulerSvg(c, info)),
+      el("td", { class: c.outcome && c.outcome.ev > 0 ? "above" : "", text: c.outcome ? dollars(c.outcome.ev) : "–" }),
       el("td", {}, el("span", { class: "two" }, s.creditMid.toFixed(2), el("small", { text: `${money(s.maxRisk)} at risk` }))),
       el("td", { text: c.components.ivRank === null || c.components.ivRank === undefined ? "–" : num(c.components.ivRank * 100) }),
       el("td", { text: c.components.ivOverHv === null ? "–" : c.components.ivOverHv.toFixed(2) }),
@@ -338,16 +375,7 @@
       }),
     );
 
-    const status = el("span", { class: "note", role: "status" });
-    const copy = el("button", { type: "button", text: "Copy for the broker" });
-    copy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(M.describe(c));
-        status.textContent = "Copied.";
-      } catch {
-        status.textContent = M.describe(c);
-      }
-    });
+    const url = M.optionStratUrl(c);
 
     return el(
       "div",
@@ -355,6 +383,14 @@
       el("div", { class: "detail-legs" }, el("h3", { text: "The two legs" }), el("div", { class: "legs-wrap" }, legs), el("p", { class: "note legs-note", text: "Per share. Theta is per day, vega per point of volatility. Net is what you hold: the leg bought minus the leg sold." })),
       el("div", {}, el("h3", { text: "The spread" }), facts([
         ["Credit at the bid and ask", `${s.creditNatural.toFixed(2)}, ${pct(s.slippagePct)} less than the mid`],
+        ...(c.outcome
+          ? [
+              ["Reaches the profit target", pct(c.outcome.pTarget)],
+              ["Stopped out", pct(c.outcome.pStop)],
+              ["Reaches the time exit", pct(c.outcome.pTime)],
+              ["Average win, average loss", `${money(c.outcome.avgWin)}, ${money(c.outcome.avgLoss)}`],
+            ]
+          : []),
         ["Break-even", s.breakeven.toFixed(2)],
         ["Short strike from the stock", r ? `${r.distance.toFixed(2)} expected moves` : "–"],
       ])),
@@ -370,12 +406,12 @@
         ["Next report", report],
       ])),
       el("div", {}, el("h3", { text: "Why it scores this" }), why),
-      el("div", { class: "detail-actions" }, copy, M.optionStratUrl(c) === null ? null : el("a", { class: "button", href: M.optionStratUrl(c), target: "_blank", rel: "noopener", text: "Open in OptionStrat" }), status),
+      url === null ? null : el("div", { class: "detail-actions" }, el("a", { class: "button", href: url, target: "_blank", rel: "noopener", text: "Open in OptionStrat" })),
     );
   }
 
   // ---- drawing everything ----------------------------------------------------------------
-  const SORT_NAMES = { score: "score", symbol: "symbol", expiration: "expiration", distance: "distance from the stock", credit: "credit", returnOnRisk: "return on risk", pop: "chance of profit", slippage: "slippage", ivPercentile: "IV percentile", ivOverHv: "IV over realised vol" };
+  const SORT_NAMES = { score: "score", symbol: "symbol", expiration: "expiration", distance: "distance from the stock", credit: "credit", returnOnRisk: "return on risk", pop: "chance of profit", slippage: "slippage", ivPercentile: "IV percentile", ivOverHv: "IV over realised vol", managedWin: "win rate under your exits", needs: "break-even win rate", ev: "expected P&L" };
 
   const DIRECTION_WORDS = { symbol: { asc: "A to Z", desc: "Z to A" }, expiration: { asc: "soonest first", desc: "latest first" } };
 

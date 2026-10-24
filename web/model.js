@@ -46,6 +46,9 @@
     slippage: [(c) => c.spread.slippagePct, "asc"],
     legSpread: [(c) => worstLegSpread(c), "asc"],
     ivRank: [(c) => c.components.ivRank, "desc"],
+    managedWin: [(c) => (c.outcome ? c.outcome.winRate : null), "desc"],
+    needs: [(c) => (c.outcome ? c.outcome.breakEvenWinRate : null), "asc"],
+    ev: [(c) => (c.outcome ? c.outcome.ev : null), "desc"],
     ivPercentile: [(c) => c.components.ivPercentile, "desc"],
     ivOverHv: [(c) => c.components.ivOverHv, "desc"],
     distance: [(c) => c.components.distance, "desc"],
@@ -89,6 +92,20 @@
   const present = (v) => v !== null && v !== undefined && v !== "" && !Number.isNaN(v);
 
   /** The candidates that pass every filter that is set. A missing figure fails a filter that asks for it. */
+  const FILTER_KEYS = ["minReturn", "minPop", "maxSlippage", "maxLegSpread", "minIvPercentile", "minIvOverHv"];
+
+  /**
+   * The filters the page opens with, and returns to on a reset: nothing hidden, except the numeric limits the
+   * scan's config asks to start from (display.filters), which hold the viewer's own criteria. Ones that are not
+   * numbers, or are not filters the page has, are ignored, so an old or odd config cannot break the page.
+   */
+  function defaultFilters(config) {
+    const f = emptyFilters();
+    const wanted = (config && config.display && config.display.filters) || {};
+    for (const key of FILTER_KEYS) if (typeof wanted[key] === "number" && Number.isFinite(wanted[key])) f[key] = wanted[key];
+    return f;
+  }
+
   function filterCandidates(candidates, symbols, f) {
     const search = f.search.trim().toUpperCase();
     const widths = f.widths === null ? null : new Set(f.widths);
@@ -189,9 +206,6 @@
     return `${MONTHS[Number(m) - 1]} ${Number(d)}`;
   }
 
-  const trim = (n) => String(Math.round(n * 1000) / 1000);
-
-  /** The spread as a person would say it to a broker: "SPY Nov 30 713/708 put spread, credit 0.40". */
   /**
    * The link that opens this spread in OptionStrat's builder: the strategy, the underlying, then the leg bought
    * and the leg sold (leading minus), each as a dot, the root, YYMMDD, P or C and the strike. Verified against
@@ -208,11 +222,6 @@
     return `https://optionstrat.com/build/${strategy}/${candidate.symbol}/${leg(s.long)},-${leg(s.short)}`;
   }
 
-  function describe(candidate) {
-    const s = candidate.spread;
-    return `${candidate.symbol} ${shortDate(s.expiration)} ${trim(s.short.strike)}/${trim(s.long.strike)} ${s.side} spread, credit ${s.creditMid.toFixed(2)}`;
-  }
-
   globalThis.SpreadModel = {
     WEIGHT_KEYS,
     RULER_EM,
@@ -222,6 +231,8 @@
     rescore,
     sortCandidates,
     emptyFilters,
+    defaultFilters,
+    FILTER_KEYS,
     filterCandidates,
     capPerUnderlying,
     visible,
@@ -229,7 +240,6 @@
     distinctExpirations,
     ruler,
     shortDate,
-    describe,
     optionStratUrl,
     GREEKS,
     netGreeks,

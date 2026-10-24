@@ -64,8 +64,25 @@ export interface ScannerConfig {
     /** After the earnings rule, only this many names, best first by IV percentile and IV over realised vol, go on to chains and quotes. */
     maxNames: number;
   };
+  /**
+   * The exit rules a spread is managed by, for the simulated outcome in the table: a resting order at
+   * `takeProfit` (a fraction of the credit), a stop at `stopLoss` (a fraction of the most that can be lost,
+   * checked on each day's close), and a time exit `exitDte` days before expiration. `fillShare` is how far from
+   * the mid toward the natural price each fill lands (0 trades at the mid, 1 at the worst price), `volEdge` how
+   * much the stock's path is drawn at its recent realised volatility instead of the options' implied (0 trusts
+   * the options), `ivDecay` how much of each option's implied volatility has drained away by the time exit
+   * (0.2 is a fifth), and `paths` and `intraday` how finely it is simulated.
+   */
+  outcome: OutcomeConfig;
   /** How the report shows clock times. Dates (expirations, earnings) carry no zone and are not affected. */
-  display: { timeZone: string };
+  display: {
+    timeZone: string;
+    /**
+     * What the report's "Keep only" fields start at, and what "Reset" returns them to: for example
+     * `{ "minIvPercentile": 30 }`. They only hide rows on the page; the scan and the saved run keep everything.
+     */
+    filters?: Partial<Record<DisplayFilter, number>>;
+  };
   strikeSelection: {
     /** Delta tolerance either side of the range when choosing which strikes to quote. */
     deltaSlack: number;
@@ -112,11 +129,42 @@ export interface SymbolInfo {
 export interface Candidate {
   symbol: string;
   spread: Spread;
+  /** Present when both legs had an implied volatility. Absent in runs saved before it existed. */
+  outcome?: Outcome;
 }
 
 export interface Dropped {
   reason: string;
   symbols: string[];
+}
+
+export interface OutcomeConfig {
+  takeProfit: number;
+  stopLoss: number;
+  exitDte: number;
+  fillShare: number;
+  volEdge: number;
+  ivDecay: number;
+  paths: number;
+  intraday: number;
+}
+
+/** A spread managed by the configured exit rules, simulated. Dollars are per contract (100 shares). */
+export interface Outcome {
+  /** Percent of paths that end in a profit. */
+  winRate: number;
+  /** Percent of paths that end at the profit target, at the stop, and at the time exit. */
+  pTarget: number;
+  pStop: number;
+  pTime: number;
+  avgWin: number;
+  avgLoss: number;
+  /** The average result of one spread, in dollars. */
+  ev: number;
+  /** The win rate at which the average win and average loss cancel: avgLoss / (avgWin + avgLoss). */
+  breakEvenWinRate: number;
+  /** winRate minus breakEvenWinRate, in points. Positive means the structure pays at that win rate. */
+  edge: number;
 }
 
 /** One step of the funnel, for a scan that started from every optionable name. */
@@ -142,6 +190,10 @@ export interface ScanResult {
   symbols: Record<string, SymbolInfo>;
   candidates: Candidate[];
 }
+
+/** The report's numeric "Keep only" fields: minimums and maximums on a row's figures. */
+export type DisplayFilter = 'minReturn' | 'minPop' | 'maxSlippage' | 'maxLegSpread' | 'minIvPercentile' | 'minIvOverHv';
+export const DISPLAY_FILTERS: readonly DisplayFilter[] = ['minReturn', 'minPop', 'maxSlippage', 'maxLegSpread', 'minIvPercentile', 'minIvOverHv'];
 
 /** How much each component counts toward a candidate's score. Relative: only the ratios matter. */
 export interface RankWeights {

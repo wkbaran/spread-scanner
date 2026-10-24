@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { deepMerge, loadConfig, validateConfig } from '../src/config.ts';
+import type { ScannerConfig } from '../src/types.ts';
 import { config } from './fixtures.ts';
 
 const defaultPath = fileURLToPath(new URL('../config/default.json', import.meta.url));
@@ -48,4 +49,14 @@ test('the rate must be an annual fraction, not a percent', () => {
   const base = config();
   assert.doesNotThrow(() => validateConfig({ ...base, strikeSelection: { ...base.strikeSelection, rate: 0.039 } }));
   assert.throws(() => validateConfig({ ...base, strikeSelection: { ...base.strikeSelection, rate: 3.9 } }), /strikeSelection\.rate/);
+});
+
+test('the report\'s starting filters are checked: known names, numbers, nothing negative', () => {
+  const base = config();
+  const withFilters = (filters: Record<string, unknown>) => ({ ...base, display: { ...base.display, filters } }) as unknown as ScannerConfig;
+  assert.doesNotThrow(() => validateConfig(withFilters({ minIvPercentile: 30, maxLegSpread: 20 })));
+  assert.doesNotThrow(() => validateConfig(base), 'no filters at all is the usual case');
+  assert.throws(() => validateConfig(withFilters({ minIvPercentil: 30 })), /display\.filters\.minIvPercentil/);
+  assert.throws(() => validateConfig(withFilters({ minPop: '70' })), /minPop must be a number/);
+  assert.throws(() => validateConfig(withFilters({ minReturn: -5 })), /minReturn must be a number/);
 });

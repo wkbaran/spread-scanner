@@ -144,9 +144,8 @@ test('ruler: the stock at the middle, puts to the left and calls to the right, o
   close(put.distance, 10 / (100 * 0.3 * Math.sqrt(52 / 365)), 1e-9);
 });
 
-test('how a spread is said to a broker', () => {
+test('dates, widths and expirations as the page lists them', () => {
   const s = scan();
-  assert.equal(M.describe(s.candidates[0]), 'AAA Oct 23 90/85 put spread, credit 0.63');
   assert.equal(M.shortDate('2026-11-30'), 'Nov 30');
   assert.equal(M.shortDate('2027-01-02'), 'Jan 2');
   assert.deepEqual(plain(M.distinctWidths(s.candidates)), [5]);
@@ -217,4 +216,36 @@ test('OptionStrat links: the leg bought, then the leg sold with a minus, in the 
   assert.equal(M.optionStratUrl(make('BRK/B', 'put', '2026-12-04', 450, 445)), null);
   // single-digit months and days keep their zeros
   assert.match(M.optionStratUrl(make('QQQ', 'call', '2027-01-08', 700, 705)) as string, /\.QQQ270108C705,-\.QQQ270108C700$/);
+});
+
+test('the filters the page opens with: nothing hidden unless the scan\'s config says where to start', () => {
+  const none = plain(M.defaultFilters(undefined));
+  assert.deepEqual(none, plain(M.emptyFilters()));
+  assert.deepEqual(plain(M.defaultFilters({ display: {} })), none);
+  const f = M.defaultFilters({ display: { filters: { minIvPercentile: 30, maxLegSpread: 20, bogus: 5, minPop: 'x' } } });
+  assert.equal(f.minIvPercentile, 30);
+  assert.equal(f.maxLegSpread, 20);
+  assert.equal(f.minPop, null, 'a value that is not a number is ignored');
+  assert.equal(f.bogus, undefined, 'so is a name the page has no filter for');
+  assert.equal(f.perUnderlying, 3);
+  // and they do hide rows the way a typed limit does
+  const s = scan();
+  const strict = M.defaultFilters({ display: { filters: { minIvPercentile: 99 } } });
+  assert.equal((M.visible(s, s.weights, strict, 'score', 'desc') as RankedCandidate[]).length, 0);
+  assert.ok((M.visible(s, s.weights, M.defaultFilters(undefined), 'score', 'desc') as RankedCandidate[]).length > 0);
+});
+
+test('the simulated-outcome columns sort, with a spread that has none last whichever way it goes', () => {
+  const s = scan();
+  const outcome = (winRate: number, breakEvenWinRate: number, ev: number) => ({ winRate, pTarget: 50, pStop: 20, pTime: 30, avgWin: 30, avgLoss: 120, ev, breakEvenWinRate, edge: winRate - breakEvenWinRate });
+  const withOutcomes = s.candidates.map((c, i) => (i === 0 ? c : { ...c, outcome: outcome(60 + i * 5, 80 - i * 2, -20 + i * 6) }));
+  const best = (key: string, dir: string) => (M.sortCandidates(withOutcomes, key, dir) as RankedCandidate[]).map((c) => c.outcome?.winRate);
+  assert.deepEqual(plain(best('managedWin', 'desc')).slice(0, 3), [75, 70, 65]);
+  const needs = (M.sortCandidates(withOutcomes, 'needs', 'asc') as RankedCandidate[]).map((c) => c.outcome?.breakEvenWinRate);
+  assert.deepEqual(plain(needs).slice(0, 3), [74, 76, 78], 'a lower break-even is better, so it sorts ascending by default');
+  assert.equal(M.defaultDirection('needs'), 'asc');
+  assert.equal(M.defaultDirection('ev'), 'desc');
+  for (const key of ['managedWin', 'needs', 'ev']) {
+    for (const dir of ['asc', 'desc']) assert.equal((M.sortCandidates(withOutcomes, key, dir) as RankedCandidate[]).at(-1)!.outcome, undefined, `${key} ${dir}: the one without an outcome is last`);
+  }
 });
