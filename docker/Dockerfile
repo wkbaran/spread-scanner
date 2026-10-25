@@ -11,7 +11,10 @@
 #   /data  everything the scanner writes or the owner supplies: watchlist.txt, config/local.json,
 #          runs/ (the log `validate` needs), report/, .cache/. This is the volume.
 
-FROM node:26-bookworm-slim
+# Pinned by digest, so a rebuild is the image that was tested and not whatever the tag points at today.
+# To take the base image's security updates, bump it:
+#   docker buildx imagetools inspect node:26-bookworm-slim   (the Digest line)
+FROM node:26-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe
 # tzdata so TZ is honoured by the schedule and the logs; curl for the healthcheck ping and for
 # fetching supercronic below.
 RUN apt-get update \

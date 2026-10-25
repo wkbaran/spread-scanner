@@ -9,6 +9,7 @@ config/local.json
 .env
 .env.*
 !.env.example
+docker/scanner.env
 *.secret
 
 # Scanner output and the daily input log (market data, and what you were looking at)

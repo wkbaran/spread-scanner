@@ -130,7 +130,7 @@ Create a tastytrade OAuth client with the `read` scope only; the scanner never p
 node src/cli.ts publish      # upload report/ to S3 (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
 ```
 
-`infra/cloudformation.yaml` creates the site: a private S3 bucket, CloudFront with a certificate, a Route 53 alias on your domain, an optional password prompt, and a publisher that can only write objects. With `EnableTickets` it also adds the Paper trade button's back end: `/api/tickets` (a Lambda that checks a token), an SQS FIFO queue, and a key for spread-book's watcher that can only take tickets and write their results. [docker/README.md](docker/README.md) has the setup, from the stack to the first scheduled run. The publisher signs its own requests, so it adds no dependency.
+`infra/cloudformation.yaml` creates the site: a private S3 bucket, CloudFront with a certificate, a Route 53 alias on your domain, an optional password prompt, and a publisher that can only write the report's own files (its key in Secrets Manager, not the stack's outputs). With `EnableTickets` it also adds the Paper trade button's back end: `/api/tickets` (a Lambda that checks a token), an SQS FIFO queue, and a key for spread-book's watcher that can only take tickets and write their results. [docker/README.md](docker/README.md) has the setup, from the stack to the first scheduled run. The publisher signs its own requests, so it adds no dependency.
 
 ## Status
 

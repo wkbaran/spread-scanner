@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   spread-scanner report - static site hosting.
-  S3 bucket (private) + CloudFront (HTTPS, optional basic auth) + a publish user
-  that can only write objects to the bucket.
+  S3 bucket (private) + CloudFront (HTTPS, security headers, optional basic auth) + a
+  publish user that can only write the report's own files, its key in Secrets Manager.
   Deploy in us-east-1: ACM certificates used by CloudFront must live there.
 
   Modelled on the equity-watch dashboard stack. The report is one page rebuilt a
@@ -209,7 +209,7 @@ Resources:
     Condition: HasTickets
     Properties:
       FunctionName: !Sub '${BucketName}-tickets'
-      Runtime: nodejs22.x
+      Runtime: nodejs24.x
       Handler: index.handler
       Role: !GetAtt TicketFunctionRole.Arn
       Timeout: 10
@@ -347,6 +347,16 @@ Resources:
     Properties:
       UserName: !Ref TicketWatcherUser
 
+  # The watcher's key, named as spread-book's docker/.env wants it. In Secrets Manager rather than
+  # the stack's outputs, which anyone who can describe the stack can read, for as long as it exists.
+  TicketWatcherKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: HasTickets
+    Properties:
+      Name: !Sub 'spread-scanner/${BucketName}/ticket-watcher'
+      Description: spread-book's ticket watcher key (TICKETS_AWS_* in its docker/.env)
+      SecretString: !Sub '{"TICKETS_AWS_ACCESS_KEY_ID":"${TicketWatcherAccessKey}","TICKETS_AWS_SECRET_ACCESS_KEY":"${TicketWatcherAccessKey.SecretAccessKey}"}'
+
   Certificate:
     Type: AWS::CertificateManager::Certificate
     Condition: HasCustomDomain
@@ -390,12 +400,14 @@ Resources:
               AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
               CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
               OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+              ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
               Compress: false
             # The watcher's results, which the page polls: never cached, behind the same basic auth as the page.
             - PathPattern: /tickets/*
               TargetOriginId: S3Origin
               ViewerProtocolPolicy: redirect-to-https
               CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+              ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
               AllowedMethods: [GET, HEAD]
               Compress: true
               FunctionAssociations: !If
@@ -410,6 +422,9 @@ Resources:
           # AWS managed CachingOptimized. It honors the origin's Cache-Control, and
           # every object is uploaded with no-cache.
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          # AWS managed SecurityHeadersPolicy, on every path: HSTS, X-Frame-Options SAMEORIGIN (no
+          # other site can frame the Paper trade button), nosniff and a strict-origin referrer.
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
           AllowedMethods: [GET, HEAD]
           Compress: true
           FunctionAssociations: !If
@@ -440,7 +455,9 @@ Resources:
         DNSName: !GetAtt Distribution.DomainName
         EvaluateTargetHealth: false
 
-  # The scanner only ever PUTs: no listing, no deleting.
+  # The scanner only ever PUTs, and only the report's own files: no listing, no deleting, and
+  # nothing under tickets/, so this key cannot forge a watcher's result. The list is index.html plus
+  # REPORT_ASSETS in src/report.ts; test/stack.test.ts keeps the two in step.
   PublishUser:
     Type: AWS::IAM::User
     Properties:
@@ -452,12 +469,24 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: s3:PutObject
-                Resource: !Sub '${Bucket.Arn}/*'
+                Resource:
+                  - !Sub '${Bucket.Arn}/index.html'
+                  - !Sub '${Bucket.Arn}/model.js'
+                  - !Sub '${Bucket.Arn}/app.js'
+                  - !Sub '${Bucket.Arn}/palette.js'
 
   PublishAccessKey:
     Type: AWS::IAM::AccessKey
     Properties:
       UserName: !Ref PublishUser
+
+  # The publisher's key, named as docker/scanner.env wants it. Not an output: see TicketWatcherKeySecret.
+  PublishKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub 'spread-scanner/${BucketName}/publisher'
+      Description: spread-scanner's publish key (AWS_* in docker/scanner.env)
+      SecretString: !Sub '{"AWS_ACCESS_KEY_ID":"${PublishAccessKey}","AWS_SECRET_ACCESS_KEY":"${PublishAccessKey.SecretAccessKey}"}'
 
 Outputs:
   SiteUrl:
@@ -466,26 +495,26 @@ Outputs:
       - !Sub 'https://${CustomDomain}'
       - !Sub 'https://${Distribution.DomainName}'
   BucketName:
-    Description: S3_BUCKET in .env
+    Description: S3_BUCKET in .env and docker/scanner.env
     Value: !Ref Bucket
   Region:
-    Description: AWS_REGION in .env
+    Description: AWS_REGION in .env and docker/scanner.env
     Value: !Ref AWS::Region
   AccessKeyId:
-    Description: AWS_ACCESS_KEY_ID in .env
+    Description: The publish key's id (the secret key is in PublishKeySecret)
     Value: !Ref PublishAccessKey
-  SecretAccessKey:
-    Description: AWS_SECRET_ACCESS_KEY in .env (visible here only; store securely)
-    Value: !GetAtt PublishAccessKey.SecretAccessKey
+  PublishKeySecret:
+    Description: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for docker/scanner.env; read with aws secretsmanager get-secret-value --secret-id <this>
+    Value: !Ref PublishKeySecret
   TicketQueueUrl:
     Condition: HasTickets
     Description: TICKETS_QUEUE_URL in spread-book's docker/.env
     Value: !Ref TicketQueue
   TicketWatcherAccessKeyId:
     Condition: HasTickets
-    Description: TICKETS_AWS_ACCESS_KEY_ID in spread-book's docker/.env
+    Description: The ticket watcher key's id (the secret key is in TicketWatcherKeySecret)
     Value: !Ref TicketWatcherAccessKey
-  TicketWatcherSecretAccessKey:
+  TicketWatcherKeySecret:
     Condition: HasTickets
-    Description: TICKETS_AWS_SECRET_ACCESS_KEY in spread-book's docker/.env (visible here only; store securely)
-    Value: !GetAtt TicketWatcherAccessKey.SecretAccessKey
+    Description: TICKETS_AWS_ACCESS_KEY_ID and TICKETS_AWS_SECRET_ACCESS_KEY for spread-book's docker/.env; read with aws secretsmanager get-secret-value --secret-id <this>
+    Value: !Ref TicketWatcherKeySecret

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
+import { REPORT_ASSETS } from '../src/report.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -103,4 +104,18 @@ test('the stack routes /api/* to the Lambda without basic auth, and tickets/* to
   assert.match(status, /TargetOriginId: S3Origin/);
   assert.match(status, /CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad/, 'CachingDisabled');
   assert.match(status, /BasicAuthFunction/);
+});
+
+test('the publish key can write the report\'s own files and nothing else', () => {
+  const policy = /PolicyName: ReportPublish([\s\S]*?)\n\n/.exec(template)?.[1] ?? '';
+  const keys = [...policy.matchAll(/\$\{Bucket\.Arn\}\/([^']*)'/g)].map((m) => m[1]);
+  assert.deepEqual(keys.sort(), ['index.html', ...REPORT_ASSETS].sort(), 'a new report asset needs adding to PublishUser too');
+});
+
+test('no secret key is a stack output, and every path gets the security headers', () => {
+  const outputs = template.slice(template.indexOf('\nOutputs:'));
+  assert.doesNotMatch(outputs, /SecretAccessKey/, 'secret keys belong in Secrets Manager, not the outputs');
+  const behaviors = template.slice(template.indexOf('CacheBehaviors:'), template.indexOf('Aliases:'));
+  assert.equal((behaviors.match(/TargetOriginId:/g) ?? []).length, 3);
+  assert.equal((behaviors.match(/ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03/g) ?? []).length, 3, 'SecurityHeadersPolicy on /api/*, /tickets/* and the default');
 });

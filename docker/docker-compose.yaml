@@ -5,9 +5,11 @@
 #   docker compose -f docker/docker-compose.yaml logs -f
 #
 # Two files feed it, and neither is copied into the image:
-#   ../.env       the app's settings (TT_*, FMP_API_KEY, S3_BUCKET, AWS_*), passed to the container.
-#   docker/.env   STATE_DIR, read by compose itself to fill in the volume path below
-#                 (template: docker/.env.example).
+#   docker/scanner.env  the app's settings (TT_*, FMP_API_KEY, S3_BUCKET, AWS_*), passed to the container
+#                       (template: docker/scanner.env.example). Not ../.env, which holds the stack's
+#                       secrets (basic-auth password, ticket token) that the scanner has no use for.
+#   docker/.env         STATE_DIR, read by compose itself to fill in the volume path below
+#                       (template: docker/.env.example).
 # Compose reads both on the machine running it, so with DOCKER_HOST=ssh://user@host they need not
 # exist on the host.
 
@@ -18,7 +20,13 @@ x-common: &common
     context: ..
     dockerfile: docker/Dockerfile
   image: spread-scanner:latest
-  env_file: ../.env
+  env_file: scanner.env
+  # The entrypoint starts as root only to chown /data and drop to `node` (docker/entrypoint.sh), which
+  # needs these four; the scanner itself runs with none. no-new-privileges: nothing can regain them.
+  cap_drop: [ALL]
+  cap_add: [CHOWN, DAC_OVERRIDE, SETUID, SETGID]
+  security_opt:
+    - no-new-privileges:true
   volumes:
     # STATE_DIR is an absolute path on the Docker host holding watchlist.txt, config/local.json,
     # runs/ (the log `validate` needs: back it up), report/ and .cache/. It is required, with no

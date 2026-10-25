@@ -3,8 +3,10 @@ node_modules
 runs
 report
 .cache
-.env
-.env.*
+# Anchored at the context root, so .env alone would still send docker/.env and docker/scanner.env.
+**/.env
+**/.env.*
+**/*.env
 config/local.json
 docs
 test
