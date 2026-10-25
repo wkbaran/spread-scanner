@@ -239,6 +239,22 @@
     return `${String(base).split("#")[0]}#try=${b64}`;
   }
 
+  /**
+   * The ticket the "Paper trade" button sends (POST /api/tickets): spread-book's watcher opens this spread as a paper
+   * trade, one contract, priced from live quotes when it acts, not at these. `seen` is what this page showed, kept
+   * with the trade for comparison. The ticket Lambda (infra/cloudformation.yaml) checks the shape; keep the two in
+   * step. `id` is the ticket's own, made fresh for each click: SQS drops a repeat of the same id.
+   */
+  function paperTicket(candidate, id) {
+    const s = candidate.spread;
+    return {
+      id,
+      type: "paper.open",
+      trade: { symbol: candidate.symbol, side: s.side, expiration: s.expiration, shortStrike: s.short.strike, longStrike: s.long.strike, qty: 1 },
+      seen: { creditMid: s.creditMid, creditNatural: s.creditNatural, popPct: s.popPct },
+    };
+  }
+
   globalThis.SpreadModel = {
     WEIGHT_KEYS,
     RULER_EM,
@@ -259,6 +275,7 @@
     shortDate,
     optionStratUrl,
     spreadBookUrl,
+    paperTicket,
     GREEKS,
     netGreeks,
   };

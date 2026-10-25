@@ -377,6 +377,11 @@
 
     const url = M.optionStratUrl(c);
     const book = M.spreadBookUrl(scan.config.display && scan.config.display.spreadBookUrl, c);
+    const paperOut = el("p", { class: "ticket-status", "aria-live": "polite" });
+    const paper = ticketToken
+      ? el("button", { type: "button", title: "Open this spread as a paper trade in spread-book: one contract, filled at live quotes when spread-book acts", text: "Paper trade" })
+      : null;
+    if (paper) paper.addEventListener("click", () => sendPaperTrade(c, paper, paperOut));
 
     return el(
       "div",
@@ -407,7 +412,7 @@
         ["Next report", report],
       ])),
       el("div", {}, el("h3", { text: "Why it scores this" }), why),
-      url === null && book === null
+      url === null && book === null && !paper
         ? null
         : el(
             "div",
@@ -415,6 +420,8 @@
             url === null ? null : el("a", { class: "button", href: url, target: "_blank", rel: "noopener", text: "Open in OptionStrat" }),
             // A named tab without noopener, so later tries land in the same spread-book tab and stack there.
             book === null ? null : el("a", { class: "button", href: book, target: "spread-book", title: "Open spread-book with this spread added as a trial trade, one contract at the mid", text: "Try in spread-book" }),
+            paper,
+            paper ? paperOut : null,
           ),
     );
   }
@@ -467,6 +474,112 @@
     $("dropped-list").replaceChildren(...scan.dropped.map((d) => el("li", {}, el("b", { text: String(d.symbols.length) }), el("span", { text: d.reason }), el("span", { class: "names", text: d.symbols.join(", ") }))));
   }
 
+  // ---- paper trades (tickets) ---------------------------------------------------------------
+  // With display.tickets in the scan's config, a ticket token saved in this browser turns on the "Paper trade"
+  // button. A click POSTs a ticket to /api/tickets (the ticket Lambda in infra/cloudformation.yaml, same origin),
+  // spread-book's watcher opens the paper trade at live quotes, and puts its result at tickets/<id>.json, which
+  // the page polls. Without a token no button acts, and the token never leaves this browser except as the
+  // Authorization header of those requests.
+  const TICKET_KEY = "spread-scanner.ticketToken";
+  const ticketsOn = !!(scan.config.display && scan.config.display.tickets);
+  let ticketToken = "";
+  try { ticketToken = (ticketsOn && localStorage.getItem(TICKET_KEY)) || ""; } catch { /* not remembered */ }
+  const bookUrl = scan.config.display && scan.config.display.spreadBookUrl;
+  const paperBookUrl = bookUrl ? new URL("paper/", String(bookUrl).split("#")[0]).href : null;
+
+  function ticketId() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    return [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  const postTicket = (ticket, token) =>
+    fetch("/api/tickets", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(ticket) });
+
+  function setToken(token) {
+    ticketToken = token;
+    try { token ? localStorage.setItem(TICKET_KEY, token) : localStorage.removeItem(TICKET_KEY); } catch { /* lasts until the tab closes */ }
+    buildTickets();
+    update();
+  }
+
+  /** The rail's Paper trades section: a field to save the token (checked with a ping first), or a way to forget it. */
+  function buildTickets() {
+    $("tickets").hidden = !ticketsOn;
+    if (!ticketsOn) return;
+    const body = $("tickets-body");
+    if (ticketToken) {
+      body.replaceChildren(
+        el("p", { class: "note", style: "margin:0 0 .4rem", text: "On in this browser: an opened row has a Paper trade button. spread-book opens it at live quotes, one contract, in the regular session only." }),
+        el("div", { class: "row" }, el("button", { type: "button", text: "Forget the token", onclick: () => setToken("") })),
+      );
+      return;
+    }
+    const input = el("input", { type: "password", "aria-label": "Ticket token", placeholder: "Ticket token", autocomplete: "off" });
+    const msg = el("p", { class: "note", style: "margin:.4rem 0 0", "aria-live": "polite" });
+    const save = el("button", { type: "button", text: "Save" });
+    const check = async () => {
+      const token = input.value.trim();
+      if (!token) return;
+      save.disabled = true;
+      msg.textContent = "Checking…";
+      try {
+        const r = await postTicket({ id: ticketId(), type: "ping" }, token);
+        if (r.ok) return setToken(token);
+        msg.textContent = r.status === 401 ? "That token was refused." : `Couldn't check it (HTTP ${r.status}).`;
+      } catch {
+        msg.textContent = "Couldn't reach the ticket service from here.";
+      }
+      save.disabled = false;
+    };
+    save.addEventListener("click", check);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") check(); });
+    body.replaceChildren(
+      el("p", { class: "note", style: "margin:0 0 .4rem", text: "Paste the ticket token to send spreads to spread-book as paper trades. It is kept in this browser only." }),
+      el("div", { class: "ticket-token" }, input, save),
+      msg,
+    );
+  }
+
+  /** Sends one spread as a paper trade and reports what spread-book did with it, in `out`. */
+  async function sendPaperTrade(c, button, out) {
+    const say = (text, bad = false, link = null) => {
+      out.className = "ticket-status" + (bad ? " bad" : "");
+      out.replaceChildren(text, ...(link ? [" ", el("a", { href: link, target: "spread-book-paper", text: "Open the paper book" })] : []));
+    };
+    button.disabled = true;
+    say("Sending…");
+    const ticket = M.paperTicket(c, ticketId());
+    let r;
+    try {
+      r = await postTicket(ticket, ticketToken);
+    } catch {
+      button.disabled = false;
+      return say("Couldn't reach the ticket service.", true);
+    }
+    if (r.status === 401) {
+      setToken("");
+      return say("The token was refused, so it was forgotten. Save it again under Paper trades.", true);
+    }
+    if (r.status !== 202) {
+      const why = await r.json().then((b) => b.error).catch(() => null);
+      button.disabled = false;
+      return say(`Not sent: ${why || `HTTP ${r.status}`}.`, true);
+    }
+    say("Sent. Waiting for spread-book…");
+    // The watcher answers in a second or two; give it a minute and a half before saying it's quiet.
+    for (let i = 0; i < 45; i++) {
+      await new Promise((done) => setTimeout(done, 2000));
+      try {
+        const res = await fetch(`/tickets/${ticket.id}.json`, { cache: "no-store" });
+        if (!res.ok) continue;
+        const result = await res.json();
+        button.disabled = false;
+        return result.status === "opened" ? say(result.message, false, paperBookUrl) : say(`Not opened: ${result.message}`, true);
+      } catch { /* not there yet */ }
+    }
+    button.disabled = false;
+    say("Sent, but spread-book hasn't answered in 90 seconds. Its ticket watcher may be down; look in the paper book before sending it again.", true, paperBookUrl);
+  }
+
   // ---- theme and layout ------------------------------------------------------------------
   function buildTheme() {
     const root = document.documentElement;
@@ -495,6 +608,7 @@
   buildWeights();
   buildHead();
   buildTheme();
+  buildTickets();
   buildControlsFold();
   syncFilters();
   syncWeights();

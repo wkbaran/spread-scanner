@@ -88,6 +88,11 @@ export interface ScannerConfig {
      * local config, never in default.json.
      */
     spreadBookUrl?: string;
+    /**
+     * Show the "Paper trades" controls: with a ticket token saved in the browser, an opened row gets a "Paper trade"
+     * button that queues the spread for spread-book's watcher (needs EnableTickets on the stack). Local config only.
+     */
+    tickets?: boolean;
   };
   strikeSelection: {
     /** Delta tolerance either side of the range when choosing which strikes to quote. */

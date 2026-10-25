@@ -70,3 +70,11 @@ test('spread-book\'s URL, when set, must be a full http(s) or file URL', () => {
   assert.throws(() => validateConfig(withBook('spreads.example.com')), /display\.spreadBookUrl/);
   assert.throws(() => validateConfig(withBook('javascript:alert(1)')), /display\.spreadBookUrl/);
 });
+
+test('display.tickets, when set, is a boolean', () => {
+  const base = config();
+  const withTickets = (tickets: unknown) => ({ ...base, display: { ...base.display, tickets } }) as unknown as ScannerConfig;
+  assert.doesNotThrow(() => validateConfig(withTickets(true)));
+  assert.doesNotThrow(() => validateConfig(withTickets(false)));
+  assert.throws(() => validateConfig(withTickets('yes')), /display\.tickets/);
+});

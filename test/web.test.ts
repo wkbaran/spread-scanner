@@ -250,6 +250,17 @@ test('"Try in spread-book" links: the trade in the fragment, in this page\'s uni
   });
 });
 
+test('the "Paper trade" ticket names the spread and what the page showed, one contract, in the shape the ticket Lambda takes', () => {
+  const c = ranked('IWM', 0.5, { shortStrike: 260 });
+  const t = plain(M.paperTicket(c, 'tk-1234-abcd'));
+  assert.deepEqual(t, {
+    id: 'tk-1234-abcd',
+    type: 'paper.open',
+    trade: { symbol: 'IWM', side: 'put', expiration: c.spread.expiration, shortStrike: 260, longStrike: 255, qty: 1 },
+    seen: { creditMid: c.spread.creditMid, creditNatural: c.spread.creditNatural, popPct: c.spread.popPct },
+  });
+});
+
 // spread-book's reader (book.js there), when the two repositories are checked out side by side.
 const bookPath = fileURLToPath(new URL('../../spread-book/book.js', import.meta.url));
 test('spread-book reads the "Try in spread-book" link as the same spread', { skip: !existsSync(bookPath) && 'spread-book is not checked out next to this repository' }, () => {

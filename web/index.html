@@ -76,8 +76,9 @@
   a.button:hover { border-color: var(--line-strong); background: color-mix(in oklab, var(--ink) 13%, var(--ground)); }
   a.strikes { text-decoration: none; color: inherit; }
   a.strikes:hover { text-decoration: underline; text-decoration-color: var(--signal); text-underline-offset: 3px; }
-  button:hover { border-color: var(--line-strong); background: color-mix(in oklab, var(--ink) 13%, var(--ground)); }
-  input[type="search"], input[type="number"], select {
+  button:disabled { opacity: 0.55; cursor: default; }
+  button:hover:not(:disabled) { border-color: var(--line-strong); background: color-mix(in oklab, var(--ink) 13%, var(--ground)); }
+  input[type="search"], input[type="number"], input[type="password"], select {
     font: inherit; font-size: 0.88rem; color: var(--ink); background: var(--ground);
     border: 1px solid var(--line-strong); border-radius: var(--radius-s); padding: 0.32rem 0.5rem; min-width: 0;
   }
@@ -226,6 +227,10 @@
   .why .off { color: var(--muted); }
   .detail-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; }
   .detail-actions .button { white-space: nowrap; }
+  .ticket-status { flex-basis: 100%; margin: 0; font-size: 0.84rem; color: var(--sub); }
+  .ticket-status.bad { color: var(--signal); }
+  .ticket-token { display: flex; gap: 0.5rem; }
+  .ticket-token input { flex: 1; min-width: 0; }
 
   .empty { max-width: 46ch; padding: 2.5rem 0; }
   .empty h2 { margin: 0 0 0.4rem; font-size: 1.15rem; font-weight: 650; font-stretch: 100%; }
@@ -379,6 +384,11 @@
       <p class="note" style="margin:0 0 .3rem">Move a slider and the list re-ranks. Only the proportions matter. These start at the scan's own weights, a first guess.</p>
       <div id="weights"></div>
       <div class="row"><button type="button" id="w-reset">Use the scan's weights</button></div>
+    </fieldset>
+
+    <fieldset id="tickets" hidden>
+      <legend>Paper trades</legend>
+      <div id="tickets-body"></div>
     </fieldset>
   </details>
 

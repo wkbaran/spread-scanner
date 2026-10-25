@@ -56,6 +56,7 @@ export function validateConfig(c: ScannerConfig): ScannerConfig {
     }
     if (!['https:', 'http:', 'file:'].includes(protocol)) fail(`display.spreadBookUrl must be a full http(s) or file URL: ${String(book)}`);
   }
+  if (c.display.tickets !== undefined && typeof c.display.tickets !== 'boolean') fail('display.tickets is true or false');
   const w = Object.values(c.ranking.weights);
   if (w.some((x) => !(x >= 0)) || !(w.reduce((a, b) => a + b, 0) > 0)) fail('ranking.weights must be non-negative and not all zero');
   return c;

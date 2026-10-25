@@ -65,6 +65,21 @@ takes a few minutes on the first deploy.
 password prompt in front of the site. The page embeds the scan, and the scan carries the thresholds
 it ran with, so turn it on if you would rather not publish those.
 
+### Paper trades (optional)
+
+`ENABLE_TICKETS=true` with a `TICKET_TOKEN` (`openssl rand -hex 32`) adds the page's **Paper trade**
+button's back end to the stack: `/api/tickets` on the same CloudFront (a Lambda that checks the token
+and the ticket's shape), an SQS FIFO queue, and a second IAM user for spread-book's ticket watcher,
+which can only receive and delete tickets and write their results to `tickets/` in the bucket. The
+page polls `tickets/<id>.json`, which is never cached and sits behind the same basic auth as the page.
+
+After the deploy, copy the outputs `TicketQueueUrl`, `TicketWatcherAccessKeyId` and
+`TicketWatcherSecretAccessKey` (shown once) into spread-book's `docker/.env` as
+`TICKETS_QUEUE_URL`, `TICKETS_AWS_ACCESS_KEY_ID` and `TICKETS_AWS_SECRET_ACCESS_KEY`, with
+`TICKETS_BUCKET` set to this bucket. Then set `"display": { "tickets": true }` in
+`config/local.json`; from the next scan the rail has a **Paper trades** section, where you paste the
+token once per browser. Without a saved token the page has no button that acts.
+
 ## 2. Start the container
 
 ```sh

@@ -53,6 +53,8 @@ declare -A PARAMS=(
   [BasicAuthPassword]="$(resolve BasicAuthPassword BASIC_AUTH_PASSWORD)"
   [CustomDomain]="$(resolve CustomDomain CUSTOM_DOMAIN)"
   [HostedZoneId]="$(resolve HostedZoneId HOSTED_ZONE_ID)"
+  [EnableTickets]="$(resolve EnableTickets ENABLE_TICKETS false)"
+  [TicketToken]="$(resolve TicketToken TICKET_TOKEN)"
 )
 
 if [ -z "${PARAMS[BucketName]}" ]; then
@@ -65,6 +67,11 @@ if [ -n "${PARAMS[CustomDomain]}" ] && [ -z "${PARAMS[HostedZoneId]}" ]; then
 fi
 if [ "${PARAMS[EnableBasicAuth]}" = "true" ] && { [ -z "${PARAMS[BasicAuthUser]}" ] || [ "${#PARAMS[BasicAuthPassword]}" -lt 12 ]; }; then
   echo "EnableBasicAuth needs BASIC_AUTH_USER and a BASIC_AUTH_PASSWORD of 12+ characters." >&2
+  exit 2
+fi
+
+if [ "${PARAMS[EnableTickets]}" = "true" ] && [ "${#PARAMS[TicketToken]}" -lt 32 ]; then
+  echo "EnableTickets needs a TICKET_TOKEN of 32+ random characters (openssl rand -hex 32)." >&2
   exit 2
 fi
 
@@ -98,7 +105,7 @@ for key in "${!PARAMS[@]}"; do overrides+=("$key=${PARAMS[$key]}"); done
 printf 'Deploying %s to %s:\n' "$STACK_NAME" "$REGION"
 for key in $(printf '%s\n' "${!PARAMS[@]}" | sort); do
   case "$key" in
-    BasicAuthPassword) printf '  %-18s %s\n' "$key" "$([ -n "${PARAMS[$key]}" ] && echo '(set)' || echo '(empty)')" ;;
+    BasicAuthPassword|TicketToken) printf '  %-18s %s\n' "$key" "$([ -n "${PARAMS[$key]}" ] && echo '(set)' || echo '(empty)')" ;;
     *) printf '  %-18s %s\n' "$key" "${PARAMS[$key]:-(empty)}" ;;
   esac
 done

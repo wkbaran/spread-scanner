@@ -5,10 +5,14 @@ Description: >
   that can only write objects to the bucket.
   Deploy in us-east-1: ACM certificates used by CloudFront must live there.
 
-  Modelled on the equity-watch dashboard stack, minus everything that writes back
-  (no ops queue, no Lambda): the report is one page rebuilt a few times a day.
+  Modelled on the equity-watch dashboard stack. The report is one page rebuilt a
+  few times a day; the only thing that writes back is the optional ticket path.
   The publisher uploads every object with Cache-Control: no-cache, so no
   invalidations are needed.
+
+  EnableTickets=true adds the one path that writes back: the page's Paper trade
+  button, through a Lambda and SQS FIFO to spread-book's watcher (see the
+  tickets section below, and docker/README.md).
 
   The page embeds the scan, and the scan carries the thresholds it ran with
   (days to expiry, delta band, earnings rule). Set EnableBasicAuth=true if you
@@ -40,6 +44,23 @@ Parameters:
       characters). It is embedded in the CloudFront Function code, so anyone with
       CloudFront console access to this account can read it.
 
+  EnableTickets:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['false', 'true']
+    Description: >
+      Let the page queue tickets (paper trades) for spread-book's watcher. Requires
+      TicketToken.
+
+  TicketToken:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >
+      Bearer token the page must send with a ticket (only with EnableTickets=true).
+      32+ random characters, e.g. from `openssl rand -hex 32`. The Lambda refuses
+      every request while it is shorter. Stored in the Lambda's environment.
+
   CustomDomain:
     Type: String
     Default: ''
@@ -60,6 +81,7 @@ Parameters:
 Conditions:
   HasCustomDomain: !Not [!Equals [!Ref CustomDomain, '']]
   HasBasicAuth: !Equals [!Ref EnableBasicAuth, 'true']
+  HasTickets: !Equals [!Ref EnableTickets, 'true']
 
 Resources:
 
@@ -126,6 +148,205 @@ Resources:
         - Expected:
             Fn::Base64: !Sub '${BasicAuthUser}:${BasicAuthPassword}'
 
+  # ---- tickets: page -> Lambda -> SQS FIFO -> spread-book's watcher (EnableTickets) ----
+  # The page's "Paper trade" button POSTs a ticket to /api/tickets (same origin, so
+  # no CORS); the Lambda checks the token and the ticket's shape and queues it;
+  # spread-book's watcher on the Docker host long-polls the queue, opens the paper
+  # trade, and writes the result to tickets/<id>.json in this bucket for the page.
+  # Copied from equity-watch's ops queue (its infra/cloudformation.yaml and
+  # docs/ARCHITECTURE.md), not shared. The watcher long-polls instead of draining
+  # at a scheduled check, so a ticket is acted on within seconds. Adding a ticket
+  # type means adding it to TYPES in the Lambda AND to the watcher (spread-book
+  # ticket-watch.js); test/stack.test.ts runs the Lambda.
+
+  TicketDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Condition: HasTickets
+    Properties:
+      QueueName: !Sub '${BucketName}-tickets-dlq.fifo'
+      FifoQueue: true
+      MessageRetentionPeriod: 1209600
+
+  TicketQueue:
+    Type: AWS::SQS::Queue
+    Condition: HasTickets
+    Properties:
+      QueueName: !Sub '${BucketName}-tickets.fifo'
+      FifoQueue: true
+      ContentBasedDeduplication: false
+      # A ticket is acted on at once or not at all: the watcher rejects one more
+      # than a few minutes old, so there is no point keeping them for days.
+      MessageRetentionPeriod: 3600
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TicketDeadLetterQueue.Arn
+        maxReceiveCount: 10
+
+  TicketFunctionRole:
+    Type: AWS::IAM::Role
+    Condition: HasTickets
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: TicketEnqueue
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt TicketQueue.Arn
+
+  TicketFunction:
+    Type: AWS::Lambda::Function
+    Condition: HasTickets
+    Properties:
+      FunctionName: !Sub '${BucketName}-tickets'
+      Runtime: nodejs22.x
+      Handler: index.handler
+      Role: !GetAtt TicketFunctionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          TICKET_TOKEN: !Ref TicketToken
+          QUEUE_URL: !Ref TicketQueue
+      Code:
+        ZipFile: |
+          const crypto = require("crypto");
+          const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
+          const sqs = new SQSClient({});
+          const TOKEN = process.env.TICKET_TOKEN || "";
+          const ID = /^[A-Za-z0-9-]{8,64}$/;
+          const MAX_BODY = 8192;
+          // Ticket types the watcher handles. Keep in step with spread-book's ticket-watch.js.
+          // "ping" only checks the token, for the page's token setup, and queues nothing.
+          const TYPES = ["ping", "paper.open"];
+          const reply = (statusCode, body) => ({
+            statusCode,
+            headers: { "content-type": "application/json", "cache-control": "no-store" },
+            body: JSON.stringify(body),
+          });
+          const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+          const positive = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+          function authorized(header) {
+            const m = /^Bearer (.+)$/.exec(header || "");
+            if (!m || TOKEN.length < 32) return false;
+            // Hash both sides so the comparison is constant-time whatever the lengths.
+            const given = crypto.createHash("sha256").update(m[1]).digest();
+            const expected = crypto.createHash("sha256").update(TOKEN).digest();
+            return crypto.timingSafeEqual(given, expected);
+          }
+          // The shape only: whether the spread exists and what it fills at is the watcher's business.
+          function badTrade(t) {
+            if (!isObject(t)) return "trade must be an object";
+            if (typeof t.symbol !== "string" || !/^[A-Z][A-Z0-9./]{0,9}$/.test(t.symbol)) return "Bad symbol";
+            if (t.side !== "put" && t.side !== "call") return "side is put or call";
+            if (typeof t.expiration !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(t.expiration)) return "expiration is YYYY-MM-DD";
+            if (!positive(t.shortStrike) || !positive(t.longStrike)) return "Bad strikes";
+            if (!Number.isInteger(t.qty) || t.qty < 1 || t.qty > 10) return "qty is 1 to 10";
+            return null;
+          }
+          exports.handler = async (event) => {
+            const method = event.requestContext && event.requestContext.http && event.requestContext.http.method;
+            if (method !== "POST") return reply(405, { error: "POST only" });
+            if (!authorized(event.headers && event.headers.authorization)) return reply(401, { error: "Bad or missing token" });
+            let raw = event.body || "";
+            if (event.isBase64Encoded) raw = Buffer.from(raw, "base64").toString("utf8");
+            if (raw.length > MAX_BODY) return reply(413, { error: "Body too large" });
+            let ticket;
+            try {
+              ticket = JSON.parse(raw);
+            } catch (e) {
+              return reply(400, { error: "Body must be JSON" });
+            }
+            if (!isObject(ticket) || typeof ticket.id !== "string" || !ID.test(ticket.id)) return reply(400, { error: "Bad ticket id" });
+            if (!TYPES.includes(ticket.type)) return reply(400, { error: "Unknown ticket type" });
+            if (ticket.type === "ping") return reply(200, { ok: true });
+            const bad = badTrade(ticket.trade);
+            if (bad) return reply(400, { error: bad });
+            if (ticket.seen !== undefined && !isObject(ticket.seen)) return reply(400, { error: "seen must be an object" });
+            const t = ticket.trade;
+            // receivedAt is the server's clock: the watcher judges a ticket's age by it, never the page's.
+            const message = {
+              id: ticket.id, type: ticket.type, receivedAt: new Date().toISOString(),
+              trade: { symbol: t.symbol, side: t.side, expiration: t.expiration, shortStrike: t.shortStrike, longStrike: t.longStrike, qty: t.qty },
+              seen: ticket.seen,
+            };
+            await sqs.send(new SendMessageCommand({
+              QueueUrl: process.env.QUEUE_URL,
+              MessageBody: JSON.stringify(message),
+              MessageGroupId: "tickets",
+              MessageDeduplicationId: ticket.id,
+            }));
+            return reply(202, { id: ticket.id, queued: true });
+          };
+
+  TicketLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: HasTickets
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${BucketName}-tickets'
+      RetentionInDays: 14
+
+  TicketFunctionUrl:
+    Type: AWS::Lambda::Url
+    Condition: HasTickets
+    Properties:
+      TargetFunctionArn: !GetAtt TicketFunction.Arn
+      AuthType: NONE
+
+  TicketFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Condition: HasTickets
+    Properties:
+      FunctionName: !Ref TicketFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  TicketFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Condition: HasTickets
+    Properties:
+      FunctionName: !Ref TicketFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+  # The watcher on the Docker host: receive and delete tickets, and write each result
+  # to tickets/<id>.json. Its own keys, so spread-book's container never holds the
+  # scanner's publish key.
+  TicketWatcherUser:
+    Type: AWS::IAM::User
+    Condition: HasTickets
+    Properties:
+      UserName: !Sub 'spread-scanner-tickets-${BucketName}'
+      Policies:
+        - PolicyName: TicketWatch
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:ChangeMessageVisibility, sqs:GetQueueAttributes]
+                Resource: !GetAtt TicketQueue.Arn
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${Bucket.Arn}/tickets/*'
+
+  TicketWatcherAccessKey:
+    Type: AWS::IAM::AccessKey
+    Condition: HasTickets
+    Properties:
+      UserName: !Ref TicketWatcherUser
+
   Certificate:
     Type: AWS::CertificateManager::Certificate
     Condition: HasCustomDomain
@@ -151,6 +372,38 @@ Resources:
             S3OriginConfig:
               OriginAccessIdentity: ''
             OriginAccessControlId: !Ref OAC
+          - !If
+            - HasTickets
+            - Id: TicketOrigin
+              DomainName: !Select [2, !Split ['/', !GetAtt TicketFunctionUrl.FunctionUrl]]
+              CustomOriginConfig:
+                OriginProtocolPolicy: https-only
+                OriginSSLProtocols: [TLSv1.2]
+            - !Ref AWS::NoValue
+        CacheBehaviors: !If
+          - HasTickets
+          # /api/* carries the Bearer token, so no basic-auth function there: the Lambda checks the token.
+          # CachingDisabled and AllViewerExceptHostHeader, as equity-watch's ops path.
+          - - PathPattern: /api/*
+              TargetOriginId: TicketOrigin
+              ViewerProtocolPolicy: https-only
+              AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+              OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+              Compress: false
+            # The watcher's results, which the page polls: never cached, behind the same basic auth as the page.
+            - PathPattern: /tickets/*
+              TargetOriginId: S3Origin
+              ViewerProtocolPolicy: redirect-to-https
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+              AllowedMethods: [GET, HEAD]
+              Compress: true
+              FunctionAssociations: !If
+                - HasBasicAuth
+                - - EventType: viewer-request
+                    FunctionARN: !GetAtt BasicAuthFunction.FunctionMetadata.FunctionARN
+                - !Ref AWS::NoValue
+          - !Ref AWS::NoValue
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
           ViewerProtocolPolicy: redirect-to-https
@@ -224,3 +477,15 @@ Outputs:
   SecretAccessKey:
     Description: AWS_SECRET_ACCESS_KEY in .env (visible here only; store securely)
     Value: !GetAtt PublishAccessKey.SecretAccessKey
+  TicketQueueUrl:
+    Condition: HasTickets
+    Description: TICKETS_QUEUE_URL in spread-book's docker/.env
+    Value: !Ref TicketQueue
+  TicketWatcherAccessKeyId:
+    Condition: HasTickets
+    Description: TICKETS_AWS_ACCESS_KEY_ID in spread-book's docker/.env
+    Value: !Ref TicketWatcherAccessKey
+  TicketWatcherSecretAccessKey:
+    Condition: HasTickets
+    Description: TICKETS_AWS_SECRET_ACCESS_KEY in spread-book's docker/.env (visible here only; store securely)
+    Value: !GetAtt TicketWatcherAccessKey.SecretAccessKey
