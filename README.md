@@ -88,6 +88,8 @@ One self-contained page: open `report/index.html` straight from disk, no server.
 - **Every row has a strike ruler.** The line is the stock, the shaded band is one expected move either side of it (the short option's own IV over the days left, the volatility its delta was computed with), and the bar runs from the short strike to the long strike. Puts sit left of the stock and calls right, on one shared scale of plus or minus 1.5 expected moves (an arrow marks a strike beyond it), so rows compare at a glance. A short strike at 0.15 to 0.25 delta sits at roughly 0.7 to 1 expected move by construction, so most spreads land inside the band.
 - **Filters** for side, spread width (a chip for each width the scan found), expiration, stocks or funds, and minimums or maximums on return, chance of profit, IV percentile, IV over realised vol, slippage and the widest bid-ask. The list shows the best three of each symbol unless you ask for more.
 - **Every spread links to OptionStrat.** The strikes in a row, and an "Open in OptionStrat" button in the opened row, open that exact spread in OptionStrat's builder in a new tab. The link names the strategy, the underlying and both legs; OptionStrat opens it in whatever view (table or graph) you last chose there, since that is kept in your own browser, not in the link.
+- **Try it in spread-book.** With `display.spreadBookUrl` set, an opened row's "Try in spread-book" button opens spread-book's report with the spread added as a trial trade: one contract at the mid, in every total, never saved. It travels in the URL fragment, so it never reaches a server, and further tries land in the same spread-book tab and stack there.
+- **Paper trade it.** With `display.tickets` on and the ticket token saved in the rail's **Paper trades** section, an opened row's "Paper trade" button sends the spread to spread-book, which opens it as a paper trade at live quotes within a few seconds and says so under the button. spread-book refuses it outside the regular session or when it arrives stale. Without a saved token there is no button that acts. The path is in [docker/README.md](docker/README.md#paper-trades-optional).
 - **Weight sliders** re-rank the list as you move them. Open a row to see its legs with their greeks and the net greeks of the spread, the underlying's figures and how each component ranked. Hover a column title for what it means.
 - **A palette picker and a Light/Dark button**, the same control as equity-watch's.
 
@@ -128,15 +130,15 @@ Create a tastytrade OAuth client with the `read` scope only; the scanner never p
 node src/cli.ts publish      # upload report/ to S3 (S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
 ```
 
-`infra/cloudformation.yaml` creates the site: a private S3 bucket, CloudFront with a certificate, a Route 53 alias on your domain, an optional password prompt, and a publisher that can only write objects. [docker/README.md](docker/README.md) has the setup, from the stack to the first scheduled run. The publisher signs its own requests, so it adds no dependency.
+`infra/cloudformation.yaml` creates the site: a private S3 bucket, CloudFront with a certificate, a Route 53 alias on your domain, an optional password prompt, and a publisher that can only write objects. With `EnableTickets` it also adds the Paper trade button's back end: `/api/tickets` (a Lambda that checks a token), an SQS FIFO queue, and a key for spread-book's watcher that can only take tickets and write their results. [docker/README.md](docker/README.md) has the setup, from the stack to the first scheduled run. The publisher signs its own requests, so it adds no dependency.
 
 ## Status
 
-Early. Written and tested: the earnings rule, strike selection, spread pairing, the tastytrade and FMP providers, the scan, the ranking, the validation, the browser report, and the container and stack that run and publish it. The weights are still a guess until `validate` has weeks of runs to check them against.
+Early. Written and tested: the earnings rule, strike selection, spread pairing, the tastytrade and FMP providers, the scan, the ranking, the validation, the browser report, the container and stack that run and publish it, and the hand-offs to spread-book (trial trades, and paper trades through the ticket queue). The weights are still a guess until `validate` has weeks of runs to check them against.
 
 ## Development
 
-Node 26 runs the TypeScript directly: no build step and no runtime dependencies.
+Node 26 runs the TypeScript directly: no build step and no runtime dependencies. The ticket Lambda is inline in `infra/cloudformation.yaml`; `test/stack.test.ts` runs it from the template.
 
 ```bash
 npm ci
@@ -144,7 +146,7 @@ npm test            # node --test
 npm run typecheck   # tsc, noEmit
 ```
 
-Related: spread-book, a separate project, manages spreads once they are open. This project finds them.
+Related: spread-book, a separate project, manages spreads once they are open. This project finds them, and hands a spread over either as a trial trade (in the link) or as a paper trade (through the ticket queue).
 
 ## Disclaimer
 

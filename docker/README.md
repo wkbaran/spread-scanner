@@ -119,5 +119,11 @@ edit `config/local.json` in `STATE_DIR`; the next run reads it.
 - **Market holidays:** there is no holiday calendar, so a scan runs against the last session's
   quotes and is saved as a run that repeats the day before. `validate` counts a spread once at its
   first listing, so this does no harm to it, but the published page will carry that day's stamp.
+- **Paper trade says spread-book hasn't answered:** the ticket is queued but nothing took it. Look at
+  spread-book's `spread-book-tickets` service (its logs, and its health check, which reads the
+  watcher's heartbeat). A ticket left on the queue is rejected as stale once spread-book does take it,
+  so send it again rather than wait.
+- **Paper trade says "The token was refused":** the page forgot the token; save it again under
+  Paper trades. The token is `TICKET_TOKEN` in `.env`, and changing it needs a stack deploy.
 - **Health:** the container is "healthy" while the scheduler is alive. A failed scan exits non-zero
   and, with `HEALTHCHECK_URL` in `.env`, pings `<url>/fail`.
