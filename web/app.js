@@ -376,6 +376,7 @@
     );
 
     const url = M.optionStratUrl(c);
+    const book = M.spreadBookUrl(scan.config.display && scan.config.display.spreadBookUrl, c);
 
     return el(
       "div",
@@ -406,7 +407,15 @@
         ["Next report", report],
       ])),
       el("div", {}, el("h3", { text: "Why it scores this" }), why),
-      url === null ? null : el("div", { class: "detail-actions" }, el("a", { class: "button", href: url, target: "_blank", rel: "noopener", text: "Open in OptionStrat" })),
+      url === null && book === null
+        ? null
+        : el(
+            "div",
+            { class: "detail-actions" },
+            url === null ? null : el("a", { class: "button", href: url, target: "_blank", rel: "noopener", text: "Open in OptionStrat" }),
+            // A named tab without noopener, so later tries land in the same spread-book tab and stack there.
+            book === null ? null : el("a", { class: "button", href: book, target: "spread-book", title: "Open spread-book with this spread added as a trial trade, one contract at the mid", text: "Try in spread-book" }),
+          ),
     );
   }
 

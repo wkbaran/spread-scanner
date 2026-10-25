@@ -222,6 +222,23 @@
     return `https://optionstrat.com/build/${strategy}/${candidate.symbol}/${leg(s.long)},-${leg(s.short)}`;
   }
 
+  /**
+   * The link that opens spread-book's report with this spread added as a trial trade ("Try in spread-book"):
+   * `base` with `#try=` and the trade as base64url JSON, `{ v: 1, trades: [trade] }`. spread-book's `readTry`
+   * and `tryTrade` (book.js there) read it and convert the units, so the trade goes in this page's own: credit
+   * per share at the mid, popPct in percent, each leg's greeks per share and its IV as a fraction (null where a
+   * leg has none). In the fragment so it never reaches the server or its logs. One contract. Null without a base
+   * (display.spreadBookUrl not configured), and any fragment the base already has is replaced.
+   */
+  function spreadBookUrl(base, candidate) {
+    if (!base) return null;
+    const s = candidate.spread;
+    const leg = (q) => ({ strike: q.strike, delta: q.delta, gamma: q.gamma ?? null, theta: q.theta ?? null, vega: q.vega ?? null, iv: q.iv || null });
+    const trade = { symbol: candidate.symbol, side: s.side, expiration: s.expiration, qty: 1, credit: s.creditMid, popPct: s.popPct, short: leg(s.short), long: leg(s.long) };
+    const b64 = btoa(JSON.stringify({ v: 1, trades: [trade] })).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    return `${String(base).split("#")[0]}#try=${b64}`;
+  }
+
   globalThis.SpreadModel = {
     WEIGHT_KEYS,
     RULER_EM,
@@ -241,6 +258,7 @@
     ruler,
     shortDate,
     optionStratUrl,
+    spreadBookUrl,
     GREEKS,
     netGreeks,
   };

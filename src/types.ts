@@ -82,6 +82,12 @@ export interface ScannerConfig {
      * `{ "minIvPercentile": 30 }`. They only hide rows on the page; the scan and the saved run keep everything.
      */
     filters?: Partial<Record<DisplayFilter, number>>;
+    /**
+     * spread-book's report, for the "Try in spread-book" button on an opened row, which opens it with the spread
+     * added as a trial trade. No URL, no button. It is embedded in the page, so it belongs in the git-ignored
+     * local config, never in default.json.
+     */
+    spreadBookUrl?: string;
   };
   strikeSelection: {
     /** Delta tolerance either side of the range when choosing which strikes to quote. */

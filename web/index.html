@@ -224,7 +224,8 @@
   .why i { grid-column: 1 / -1; display: block; height: 3px; background: var(--line); }
   .why i::after { content: ""; display: block; height: 100%; width: var(--w); background: var(--sub); }
   .why .off { color: var(--muted); }
-  .detail-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.8rem; }
+  .detail-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; }
+  .detail-actions .button { white-space: nowrap; }
 
   .empty { max-width: 46ch; padding: 2.5rem 0; }
   .empty h2 { margin: 0 0 0.4rem; font-size: 1.15rem; font-weight: 650; font-stretch: 100%; }

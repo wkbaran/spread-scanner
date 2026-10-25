@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { weightedScore } from '../src/rank.ts';
@@ -13,7 +13,7 @@ const webPath = (name: string): string => fileURLToPath(new URL(`../web/${name}`
 
 /** The page's model.js, run in a bare context the way a browser would run a classic script. */
 function loadModel() {
-  const context = vm.createContext({});
+  const context = vm.createContext({ btoa }); // a browser global the page's encoder uses
   vm.runInContext(readFileSync(webPath('model.js'), 'utf8'), context);
   return (context as { SpreadModel: Record<string, (...args: never[]) => unknown> & { WEIGHT_KEYS: string[]; RULER_EM: number } }).SpreadModel;
 }
@@ -216,6 +216,60 @@ test('OptionStrat links: the leg bought, then the leg sold with a minus, in the 
   assert.equal(M.optionStratUrl(make('BRK/B', 'put', '2026-12-04', 450, 445)), null);
   // single-digit months and days keep their zeros
   assert.match(M.optionStratUrl(make('QQQ', 'call', '2027-01-08', 700, 705)) as string, /\.QQQ270108C705,-\.QQQ270108C700$/);
+});
+
+test('"Try in spread-book" links: the trade in the fragment, in this page\'s units, and no link without a URL', () => {
+  const base = ranked('AAA', 0.5, {});
+  const c: RankedCandidate = {
+    ...base,
+    symbol: 'IWM',
+    spread: {
+      ...base.spread,
+      side: 'put',
+      expiration: '2026-12-04',
+      creditMid: 0.83,
+      popPct: 78.4,
+      short: { ...base.spread.short, side: 'put', strike: 260, delta: -0.2, gamma: 0.02, theta: -0.05, vega: 0.21, iv: 0.24 },
+      long: { ...base.spread.long, side: 'put', strike: 255, delta: -0.15, gamma: 0.016, theta: -0.04, vega: 0.17, iv: 0 },
+    },
+  };
+  assert.equal(M.spreadBookUrl(undefined, c), null);
+  assert.equal(M.spreadBookUrl('', c), null);
+  const url = M.spreadBookUrl('https://book.example.com/index.html?snapshot=x#old', c) as string;
+  const [head, b64] = url.split('#try=');
+  assert.equal(head, 'https://book.example.com/index.html?snapshot=x', 'the base\'s own fragment is replaced');
+  assert.match(b64 as string, /^[A-Za-z0-9_-]+$/, 'base64url, nothing to escape in a URL');
+  const payload = JSON.parse(Buffer.from(b64 as string, 'base64url').toString());
+  assert.deepEqual(payload, {
+    v: 1,
+    trades: [{
+      symbol: 'IWM', side: 'put', expiration: '2026-12-04', qty: 1, credit: 0.83, popPct: 78.4,
+      short: { strike: 260, delta: -0.2, gamma: 0.02, theta: -0.05, vega: 0.21, iv: 0.24 },
+      long: { strike: 255, delta: -0.15, gamma: 0.016, theta: -0.04, vega: 0.17, iv: null },
+    }],
+  });
+});
+
+// spread-book's reader (book.js there), when the two repositories are checked out side by side.
+const bookPath = fileURLToPath(new URL('../../spread-book/book.js', import.meta.url));
+test('spread-book reads the "Try in spread-book" link as the same spread', { skip: !existsSync(bookPath) && 'spread-book is not checked out next to this repository' }, () => {
+  const context = vm.createContext({ atob, URLSearchParams });
+  vm.runInContext(readFileSync(bookPath, 'utf8'), context);
+  const SB = (context as { SpreadBook: any }).SpreadBook;
+  const c = ranked('AAA', 0.5, {});
+  const url = M.spreadBookUrl('https://book.example.com/', c) as string;
+  const [t] = plain(SB.readTry(new URL(url).hash));
+  const s = c.spread;
+  const [lo, hi] = [s.short.strike, s.long.strike].sort((a, b) => a - b);
+  assert.ok(t, 'spread-book accepts it');
+  assert.equal(t.underlying, c.symbol);
+  assert.equal(t.expiration, s.expiration);
+  assert.equal(t.type, s.side === 'put' ? 'Bull Put' : 'Bear Call');
+  assert.match(t.name, new RegExp(` ${lo}/${hi} (Bull Put|Bear Call) Spread$`));
+  close(t.credit, s.creditMid * 100, 1e-9);
+  close(t.maxLoss, s.maxRisk, 0.006);
+  close(t.chance, s.popPct / 100, 1e-12);
+  close(t.delta, (s.long.delta - s.short.delta) * 100, 1e-9);
 });
 
 test('the filters the page opens with: nothing hidden unless the scan\'s config says where to start', () => {

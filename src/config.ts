@@ -46,6 +46,16 @@ export function validateConfig(c: ScannerConfig): ScannerConfig {
     if (!(DISPLAY_FILTERS as readonly string[]).includes(key)) fail(`display.filters.${key} is not a filter the report has (${DISPLAY_FILTERS.join(', ')})`);
     if (!(typeof value === 'number' && Number.isFinite(value) && value >= 0)) fail(`display.filters.${key} must be a number, 0 or more`);
   }
+  const book = c.display.spreadBookUrl;
+  if (book !== undefined) {
+    let protocol = '';
+    try {
+      protocol = new URL(String(book)).protocol;
+    } catch {
+      // reported below
+    }
+    if (!['https:', 'http:', 'file:'].includes(protocol)) fail(`display.spreadBookUrl must be a full http(s) or file URL: ${String(book)}`);
+  }
   const w = Object.values(c.ranking.weights);
   if (w.some((x) => !(x >= 0)) || !(w.reduce((a, b) => a + b, 0) > 0)) fail('ranking.weights must be non-negative and not all zero');
   return c;

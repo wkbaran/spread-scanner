@@ -60,3 +60,13 @@ test('the report\'s starting filters are checked: known names, numbers, nothing 
   assert.throws(() => validateConfig(withFilters({ minPop: '70' })), /minPop must be a number/);
   assert.throws(() => validateConfig(withFilters({ minReturn: -5 })), /minReturn must be a number/);
 });
+
+test('spread-book\'s URL, when set, must be a full http(s) or file URL', () => {
+  const base = config();
+  const withBook = (spreadBookUrl: unknown) => ({ ...base, display: { ...base.display, spreadBookUrl } }) as unknown as ScannerConfig;
+  assert.doesNotThrow(() => validateConfig(base), 'no URL, no button');
+  assert.doesNotThrow(() => validateConfig(withBook('https://spreads.example.com/')));
+  assert.doesNotThrow(() => validateConfig(withBook('file:///home/someone/spread-book/reports/index.html')));
+  assert.throws(() => validateConfig(withBook('spreads.example.com')), /display\.spreadBookUrl/);
+  assert.throws(() => validateConfig(withBook('javascript:alert(1)')), /display\.spreadBookUrl/);
+});

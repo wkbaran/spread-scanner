@@ -75,6 +75,14 @@ The "Keep only" fields start at `display.filters` from the scan's own embedded c
 
 `optionStratUrl` in `web/model.js` builds `https://optionstrat.com/build/<bull-put-spread|bear-call-spread>/<SYMBOL>/.<SYMBOL><YYMMDD><P|C><strike>,-.<SYMBOL>...`: the leg bought first, the leg sold with a leading minus. The user supplied one put example; a call spread and a half-dollar strike were checked by opening them on the site and reading the page title ("SPY Dec 4th 795/790 Bear Call Spread"). OptionStrat's site refuses plain HTTP fetches (403), so a check needs a real browser. The table or graph view is not in the link: the site keeps it in the visitor's localStorage (`displayType`), and the user is happy with their own default. Symbols that are not plain letters (BRK/B) get no link, because the option root can differ from the stock's.
 
+## "Try in spread-book"
+
+`spreadBookUrl` in `web/model.js` builds a link to spread-book's report with the spread in the fragment (`#try=`, base64url JSON, in this page's units: per-share greeks, IV as a fraction). spread-book's `book.js` (`readTry`, `tryTrade`) decodes it and converts the units; the two sides are a contract, so change one, change the other. `test/web.test.ts` runs spread-book's reader on this encoder when the repos are checked out side by side, and skips otherwise.
+
+- **The URL comes from the scan's embedded config** (`display.spreadBookUrl`), like `display.filters`, so setting it shows the button from the next scan, not on a rebuilt old report. No URL, no button.
+- **The link targets a named tab (`spread-book`) and has no `rel="noopener"`, on purpose.** Then the next try lands in the same spread-book tab as a fragment change, and the trades stack there. With `noopener` the browser opens a new tab each time (the two sites are different origins).
+- It is the fragment, not a query string, so the trade never reaches CloudFront's logs.
+
 ## No watchlist: the funnel
 
 A scan with no `--symbols` starts from every optionable stock and fund (`Tastytrade.optionableEquities`, about 6,000 of the catalogue's 13,000: those with `option-tick-sizes` and not closing-only) and narrows it in `scan` when `deps.funnel` is set. Things that look simplifiable and aren't:
