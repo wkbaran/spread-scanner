@@ -128,18 +128,23 @@
     });
   }
 
-  /** Keeps the first `n` of each underlying, in the order given. 0 keeps everything. */
+  /**
+   * Keeps the first `n` of each underlying and side, in the order given. 0 keeps everything. Per side, because
+   * at the same delta the put skew makes call spreads pay more, so a cap per symbol alone hid every put on the
+   * index funds behind their calls.
+   */
   function capPerUnderlying(candidates, n) {
     if (!n) return candidates;
     const seen = new Map();
     return candidates.filter((c) => {
-      const k = (seen.get(c.symbol) || 0) + 1;
-      seen.set(c.symbol, k);
+      const key = `${c.symbol} ${c.spread.side}`;
+      const k = (seen.get(key) || 0) + 1;
+      seen.set(key, k);
       return k <= n;
     });
   }
 
-  /** The list on screen: filter, re-score, sort, then cap each underlying (so the cap keeps its best by the sort). */
+  /** The list on screen: filter, re-score, sort, then cap each underlying and side (so the cap keeps its best by the sort). */
   function visible(scan, weights, filters, sortKey, direction) {
     const filtered = filterCandidates(scan.candidates, scan.symbols, filters);
     const sorted = sortCandidates(rescore(filtered, weights), sortKey, direction);

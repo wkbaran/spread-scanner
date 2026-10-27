@@ -113,6 +113,14 @@ test('the per-symbol cap keeps the first few of each symbol, in the order given,
   assert.equal((M.capPerUnderlying(sorted, 0) as unknown[]).length, 4);
 });
 
+test('the per-symbol cap counts each side on its own, so the calls cannot crowd out the puts', () => {
+  const s = scan();
+  const mixed = [...s.candidates, ranked('AAA', 0.4, { side: 'call', shortStrike: 112 })];
+  const sorted = M.sortCandidates(mixed, 'score', 'desc') as RankedCandidate[];
+  const kept = M.capPerUnderlying(sorted, 1) as RankedCandidate[];
+  assert.deepEqual(plain(kept.map((c) => `${c.symbol} ${c.spread.side} ${c.score}`)), ['AAA put 0.9', 'BBB call 0.7', 'AAA call 0.4']);
+});
+
 test('the list on screen: the cap is applied after sorting, so it keeps the best by the chosen sort', () => {
   const s = scan();
   const withPop = M.visible(s, weights({ pop: 1 }), { ...M.emptyFilters(), perUnderlying: 1 }, 'score', 'desc') as RankedCandidate[];

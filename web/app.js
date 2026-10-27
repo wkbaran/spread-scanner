@@ -506,7 +506,7 @@
     const per = state.filters.perUnderlying;
     $("summary").replaceChildren(
       el("strong", { text: String(list.length) }),
-      ` of ${scan.candidates.length} spreads, on ${names} of ${Object.keys(scan.symbols).length} symbols${per ? `, the best ${per} of each` : ""}, ordered by ${SORT_NAMES[state.sortKey] || state.sortKey}, ${DIRECTION_WORDS[state.sortKey] ? DIRECTION_WORDS[state.sortKey][state.sortDir] : state.sortDir === "desc" ? "highest first" : "lowest first"}.`,
+      ` of ${scan.candidates.length} spreads, on ${names} of ${Object.keys(scan.symbols).length} symbols${per ? `, the best ${per} of each side` : ""}, ordered by ${SORT_NAMES[state.sortKey] || state.sortKey}, ${DIRECTION_WORDS[state.sortKey] ? DIRECTION_WORDS[state.sortKey][state.sortDir] : state.sortDir === "desc" ? "highest first" : "lowest first"}.`,
     );
     $("empty").hidden = list.length > 0;
     $("table-wrap").hidden = list.length === 0;
