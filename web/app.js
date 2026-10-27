@@ -296,6 +296,10 @@
 
   const rowKey = (c) => [c.symbol, c.spread.side, c.spread.expiration, c.spread.short.strike, c.spread.long.strike].join("|");
 
+  // Every OptionStrat link opens in one named tab, so a second spread replaces the first instead of piling up tabs.
+  // No rel="noopener": a tab opened with it cannot be found by name again, and the browser would open a new one.
+  const OPTIONSTRAT_TAB = "optionstrat";
+
   /** The strikes in a row, as a link to the same spread in OptionStrat when there is one. */
   function strikesLabel(c) {
     const s = c.spread;
@@ -304,7 +308,7 @@
     // The click stops at the link, so opening OptionStrat does not also open the row.
     return url === null
       ? el("span", { class: "strikes", text })
-      : el("a", { class: "strikes", href: url, target: "_blank", rel: "noopener", title: "Open this spread in OptionStrat", text, onclick: (e) => e.stopPropagation() });
+      : el("a", { class: "strikes", href: url, target: OPTIONSTRAT_TAB, title: "Open this spread in OptionStrat", text, onclick: (e) => e.stopPropagation() });
   }
 
   /**
@@ -463,7 +467,7 @@
         : el(
             "div",
             { class: "detail-actions" },
-            url === null ? null : el("a", { class: "button", href: url, target: "_blank", rel: "noopener", text: "Open in OptionStrat" }),
+            url === null ? null : el("a", { class: "button", href: url, target: OPTIONSTRAT_TAB, text: "Open in OptionStrat" }),
             // A named tab without noopener, so later tries land in the same spread-book tab and stack there.
             book === null ? null : el("a", { class: "button", href: book, target: "spread-book", title: "Open spread-book with this spread added as a trial trade, one contract at the mid", text: "Try in spread-book" }),
             paper,
