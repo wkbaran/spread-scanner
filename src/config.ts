@@ -25,6 +25,7 @@ export function validateConfig(c: ScannerConfig): ScannerConfig {
   }
   if (!(c.width.min > 0 && c.width.min <= c.width.max)) fail('width.min must be positive and no larger than width.max');
   if (!(c.maxLegSpreadPct > 0)) fail('maxLegSpreadPct must be positive');
+  if (!(c.minLegActivity >= 0)) fail('minLegActivity must be 0 or more');
   if (!(c.delta.min - c.strikeSelection.deltaSlack > 0)) fail('strikeSelection.deltaSlack must be smaller than delta.min');
   if (!(c.universe.minLiquidityRating >= 0 && c.universe.minLiquidityRating <= 5)) fail('universe.minLiquidityRating must be between 0 and 5');
   if (!(c.strikeSelection.rate >= 0 && c.strikeSelection.rate <= 0.2)) fail('strikeSelection.rate is an annual rate as a fraction, e.g. 0.04');

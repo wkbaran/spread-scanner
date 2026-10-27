@@ -3,6 +3,7 @@
   "delta": { "min": 0.15, "max": 0.25 },
   "width": { "min": 5, "max": 10 },
   "maxLegSpreadPct": 20,
+  "minLegActivity": 10,
   "earnings": { "minDaysSinceLast": 4, "minDaysUntilNext": 35 },
   "universe": { "minLiquidityRating": 4, "maxNames": 250 },
   "outcome": { "takeProfit": 0.5, "stopLoss": 0.25, "exitDte": 21, "fillShare": 0.5, "volEdge": 0, "ivDecay": 0, "paths": 800, "intraday": 3 },

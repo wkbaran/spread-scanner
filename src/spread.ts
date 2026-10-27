@@ -15,7 +15,15 @@ export function legSpreadPct(q: Pick<Quote, 'bid' | 'ask'>): number {
 
 const isOtm = (q: Quote, spot: number): boolean => (q.side === 'put' ? q.strike < spot : q.strike > spot);
 
-const legUsable = (q: Quote, cfg: ScannerConfig): boolean => legSpreadPct(q) <= cfg.maxLegSpreadPct;
+/**
+ * Each option's open interest or today's volume, whichever is larger. Either will do: volume is near zero at
+ * the morning scan, so open interest (as of the last close) carries it then, and a strike opened today shows
+ * volume before it shows open interest.
+ */
+export const legActivity = (q: Pick<Quote, 'openInterest' | 'volume'>): number => Math.max(q.openInterest || 0, q.volume || 0);
+
+const legUsable = (q: Quote, cfg: ScannerConfig): boolean =>
+  legSpreadPct(q) <= cfg.maxLegSpreadPct && legActivity(q) >= cfg.minLegActivity;
 
 /** Credit, risk and odds for one pair. Null when the pair is not a credit at the mid. */
 export function spreadMetrics(short: Quote, long: Quote): Spread | null {
@@ -48,8 +56,8 @@ export function spreadMetrics(short: Quote, long: Quote): Spread | null {
 }
 
 /**
- * Credit spreads for one side of one chain. A short leg needs an absolute delta in range and a
- * usable bid-ask; so does its long leg. Every usable long leg a permitted width past the short is
+ * Credit spreads for one side of one chain. A short leg needs an absolute delta in range, a usable
+ * bid-ask and enough open interest or volume; so does its long leg. Every usable long leg a permitted width past the short is
  * paired with it, so one short strike can yield several spreads. Choosing among widths is left to
  * whoever reads the result: the report filters by width.
  */
@@ -95,5 +103,5 @@ export function whyNoSpread(quotes: Quote[], spot: number, cfg: ScannerConfig): 
       if (longs.length > 0) stage = Math.max(stage, 4);
     }
   }
-  return ['', 'no short leg at the target delta', 'short leg bid-ask too wide', 'no long leg in the width range with a usable bid-ask', 'no pair gives a credit'][stage] as string;
+  return ['', 'no short leg at the target delta', 'short leg bid-ask too wide or too little traded', 'no long leg in the width range with a usable bid-ask and enough trading', 'no pair gives a credit'][stage] as string;
 }

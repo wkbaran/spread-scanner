@@ -52,6 +52,11 @@ export interface ScannerConfig {
   width: { min: number; max: number };
   /** An option whose (ask - bid) / mid is over this percent is not used, short leg or long. */
   maxLegSpreadPct: number;
+  /**
+   * An option whose open interest and today's volume are both under this is not used, short leg or long. A
+   * tight quote on a strike nobody holds or trades is a market maker's offer, not a market.
+   */
+  minLegActivity: number;
   earnings: { minDaysSinceLast: number; minDaysUntilNext: number };
   ranking: { weights: RankWeights };
   /**

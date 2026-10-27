@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { legSpreadPct, pairSpreads, spreadMetrics, whyNoSpread } from '../src/spread.ts';
 import { close, config, quote } from './fixtures.ts';
+import type { Quote } from '../src/types.ts';
 
 test('the bid-ask percent is (ask - bid) over the mid, and OptionStrat\'s own formula gives the same', () => {
   const bid = 0.35;
@@ -82,6 +83,19 @@ test('a short leg must be out of the money, in the delta range, in the DTE windo
   assert.equal(pairSpreads(wide, 'put', spot, cfg).length, 0, 'short leg bid-ask over 20%');
 });
 
+test('every leg needs open interest or volume of at least minLegActivity, whichever is larger', () => {
+  const cfg = config({ minLegActivity: 10 });
+  const thin = (strike: number, openInterest: number, volume: number) =>
+    chain().map((q) => (q.strike === strike ? { ...q, openInterest, volume } : q));
+  // USO's 147 put on 2026-10-27: quoted 6% wide, no open interest, volume 2
+  assert.equal(pairSpreads(thin(90, 0, 2), 'put', spot, cfg).length, 0, 'a short leg nobody holds or trades');
+  assert.equal(pairSpreads(thin(90, 0, 12), 'put', spot, cfg).length, pairSpreads(chain(), 'put', spot, cfg).length, 'volume alone is enough');
+  assert.equal(pairSpreads(thin(90, 12, 0), 'put', spot, cfg).length, pairSpreads(chain(), 'put', spot, cfg).length, 'open interest alone is enough');
+  const longs = (q: Quote[]) => pairSpreads(q, 'put', spot, cfg).map((s) => s.long.strike);
+  assert.ok(longs(chain()).includes(85) && !longs(thin(85, 3, 3)).includes(85), 'a thin long leg drops only its own pairs');
+  assert.equal(pairSpreads(thin(90, 0, 0), 'put', spot, config({ minLegActivity: 0 })).length > 0, true, '0 turns the rule off');
+});
+
 test('call spreads pair upward, and expirations are judged separately', () => {
   const calls = [quote('call', 110, 1.0, 1.1, 0.2), quote('call', 115, 0.45, 0.5, 0.11), quote('call', 120, 0.2, 0.24, 0.05)];
   assert.deepEqual(pairSpreads(calls, 'call', spot, config()).map((s) => s.width), [5, 10]);
@@ -101,9 +115,9 @@ test('why there is no spread: the furthest stage reached is named', () => {
   assert.equal(whyNoSpread(chain().map((q) => ({ ...q, dte: 20 })), spot, cfg), 'no quotes in the DTE window');
   assert.equal(whyNoSpread([quote('put', 95, 2.0, 2.1, -0.35), quote('put', 85, 0.45, 0.5, -0.11)], spot, cfg), 'no short leg at the target delta');
   const wideShort = chain().map((q) => (q.strike === 90 ? { ...q, bid: 0.7, ask: 1.1 } : q));
-  assert.equal(whyNoSpread(wideShort, spot, cfg), 'short leg bid-ask too wide');
+  assert.equal(whyNoSpread(wideShort, spot, cfg), 'short leg bid-ask too wide or too little traded');
   const noLongs = chain().filter((q) => q.strike === 90 || q.strike === 86);
-  assert.equal(whyNoSpread(noLongs, spot, cfg), 'no long leg in the width range with a usable bid-ask');
+  assert.equal(whyNoSpread(noLongs, spot, cfg), 'no long leg in the width range with a usable bid-ask and enough trading');
   const noCredit = [quote('put', 90, 0.43, 0.47, -0.2), quote('put', 85, 1.0, 1.1, -0.11)];
   assert.equal(whyNoSpread(noCredit, spot, cfg), 'no pair gives a credit');
 });

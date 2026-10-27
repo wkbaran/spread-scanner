@@ -7,6 +7,7 @@ export function config(overrides: Partial<ScannerConfig> = {}): ScannerConfig {
     delta: { min: 0.15, max: 0.25 },
     width: { min: 5, max: 10 },
     maxLegSpreadPct: 20,
+    minLegActivity: 10,
     earnings: { minDaysSinceLast: 4, minDaysUntilNext: 37 },
     ranking: { weights: { ivPercentile: 0.2, ivOverHv: 0.3, returnOnRisk: 0.25, pop: 0.15, legSpread: 0.1, distance: 0 } },
     universe: { minLiquidityRating: 4, maxNames: 250 },
