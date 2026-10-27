@@ -105,6 +105,19 @@ test('filters: side, width, expiration, kind, search, and the numeric limits; a 
   assert.equal((M.filterCandidates(missing, s.symbols, f()) as unknown[]).length, 4);
 });
 
+test('the open interest or volume filter takes the larger of the two on each leg, and the weaker leg decides', () => {
+  const s = scan();
+  const withLegs = (oiShort: number, volShort: number, oiLong: number, volLong: number): RankedCandidate => {
+    const c = s.candidates[0]!;
+    return { ...c, spread: { ...c.spread, short: { ...c.spread.short, openInterest: oiShort, volume: volShort }, long: { ...c.spread.long, openInterest: oiLong, volume: volLong } } };
+  };
+  const passes = (c: RankedCandidate) => (M.filterCandidates([c], s.symbols, { ...M.emptyFilters(), minLegActivity: 10 }) as unknown[]).length === 1;
+  assert.equal(passes(withLegs(0, 12, 500, 0)), true, 'volume carries a leg with no open interest, and open interest one with no volume');
+  assert.equal(passes(withLegs(0, 2, 6, 8)), false, 'USO 147/142 on 2026-10-27: neither leg reaches 10');
+  assert.equal(passes(withLegs(500, 500, 9, 9)), false, 'one thin leg is enough to hide it');
+  assert.equal(M.leastLegActivity(withLegs(0, 12, 500, 0)), 12);
+});
+
 test('the per-symbol cap keeps the first few of each symbol, in the order given, and 0 keeps all', () => {
   const s = scan();
   const sorted = M.sortCandidates(s.candidates, 'score', 'desc') as RankedCandidate[];

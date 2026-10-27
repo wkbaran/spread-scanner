@@ -33,6 +33,17 @@
 
   const worstLegSpread = (c) => c.components.legSpread;
 
+  /**
+   * How much the less-traded leg is held or traded: each leg counts the larger of its open interest and today's
+   * volume, and the spread gets the smaller of its two legs. Either figure will do, because early in the session
+   * volume is near zero and open interest (as of the last close) has to carry it, while a strike opened today
+   * shows volume before it shows open interest. A row-hiding filter only, never a gate in the scan: a tight
+   * quote with no open interest can still be a fair market (see CLAUDE.md on why open interest is not the
+   * liquidity rule).
+   */
+  const legActivity = (q) => Math.max(q.openInterest || 0, q.volume || 0);
+  const leastLegActivity = (c) => Math.min(legActivity(c.spread.short), legActivity(c.spread.long));
+
   /** Keys the table can sort by, each as [value, direction that reads as "best first"]. */
   const SORTS = {
     score: [(c) => c.score, "desc"],
@@ -85,6 +96,7 @@
     maxLegSpread: null,
     minIvPercentile: null,
     minIvOverHv: null,
+    minLegActivity: null,
     search: "",
     perUnderlying: 3, // 0 keeps them all
   });
@@ -92,7 +104,7 @@
   const present = (v) => v !== null && v !== undefined && v !== "" && !Number.isNaN(v);
 
   /** The candidates that pass every filter that is set. A missing figure fails a filter that asks for it. */
-  const FILTER_KEYS = ["minReturn", "minPop", "maxSlippage", "maxLegSpread", "minIvPercentile", "minIvOverHv"];
+  const FILTER_KEYS = ["minReturn", "minPop", "maxSlippage", "maxLegSpread", "minIvPercentile", "minIvOverHv", "minLegActivity"];
 
   /**
    * The filters the page opens with, and returns to on a reset: nothing hidden, except the numeric limits the
@@ -124,6 +136,7 @@
       if (present(f.maxLegSpread) && !(worstLegSpread(c) <= f.maxLegSpread)) return false;
       if (present(f.minIvPercentile) && !(c.components.ivPercentile !== null && c.components.ivPercentile * 100 >= f.minIvPercentile)) return false;
       if (present(f.minIvOverHv) && !(c.components.ivOverHv !== null && c.components.ivOverHv >= f.minIvOverHv)) return false;
+      if (present(f.minLegActivity) && !(leastLegActivity(c) >= f.minLegActivity)) return false;
       return true;
     });
   }
@@ -306,6 +319,7 @@
     emptyFilters,
     defaultFilters,
     FILTER_KEYS,
+    leastLegActivity,
     filterCandidates,
     capPerUnderlying,
     visible,

@@ -112,6 +112,7 @@
     ["f-ivhv", "minIvOverHv"],
     ["f-slip", "maxSlippage"],
     ["f-leg", "maxLegSpread"],
+    ["f-act", "minLegActivity"],
   ];
   const allWidths = M.distinctWidths(scan.candidates);
 
