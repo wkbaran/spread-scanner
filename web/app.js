@@ -301,24 +301,70 @@
     const s = c.spread;
     const text = `${strike(s.short.strike)} / ${strike(s.long.strike)} ${s.side}`;
     const url = M.optionStratUrl(c);
-    return url === null ? el("span", { class: "strikes", text }) : el("a", { class: "strikes", href: url, target: "_blank", rel: "noopener", title: "Open this spread in OptionStrat", text });
+    // The click stops at the link, so opening OptionStrat does not also open the row.
+    return url === null
+      ? el("span", { class: "strikes", text })
+      : el("a", { class: "strikes", href: url, target: "_blank", rel: "noopener", title: "Open this spread in OptionStrat", text, onclick: (e) => e.stopPropagation() });
+  }
+
+  /**
+   * The ticker, as a link to its TradingView chart. A plain click opens the chart panel over the page (and not
+   * the row); a modified or middle click skips the handler and opens or reuses a real tradingview.com tab, by
+   * name, which is why there is no rel="noopener".
+   */
+  function symbolLink(symbol) {
+    const href = M.tradingViewUrl(symbol);
+    const text = el("span", { class: "sym-text", text: symbol });
+    if (href === null) return text;
+    return el("a", {
+      class: "sym-link",
+      href,
+      target: "tradingview",
+      title: `Open the ${symbol} chart`,
+      onclick: (e) => {
+        e.stopPropagation();
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        openChart(symbol);
+      },
+    }, text);
   }
 
   function row(c) {
     const s = c.spread;
     const info = scan.symbols[c.symbol];
-    const open = state.open.has(rowKey(c));
-    const toggle = el("button", { type: "button", class: "sym", "aria-expanded": String(open), "aria-controls": `d-${rowKey(c)}` }, c.symbol, info.isEtf ? el("span", { class: "tag", text: "fund" }) : null);
-    toggle.addEventListener("click", () => {
-      const k = rowKey(c);
+    const k = rowKey(c);
+    const open = state.open.has(k);
+    const toggle = () => {
       if (state.open.has(k)) state.open.delete(k);
       else state.open.add(k);
       render();
-    });
+      // render() rebuilt the rows, so put the focus back on this one for the keyboard
+      const again = [...$("body").querySelectorAll("tr.item")].find((r) => r.dataset.key === k);
+      if (again && document.activeElement === document.body) again.focus({ preventScroll: true });
+    };
+    // A click anywhere on the row opens it, except on its links (the ticker's chart, the strikes' OptionStrat),
+    // which stop the click themselves, and except at the end of a drag that selected text to copy.
     const tr = el(
       "tr",
-      { class: `item${open ? " open" : ""}` },
-      el("td", { class: "left" }, toggle),
+      {
+        class: `item${open ? " open" : ""}`,
+        tabindex: "0",
+        "aria-expanded": String(open),
+        "aria-controls": `d-${k}`,
+        "data-key": k,
+        onclick: (e) => {
+          if (e.target.closest("a, button")) return;
+          if (String(getSelection()).trim() !== "") return;
+          toggle();
+        },
+        onkeydown: (e) => {
+          if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+          e.preventDefault();
+          toggle();
+        },
+      },
+      el("td", { class: "left" }, el("span", { class: "sym" }, symbolLink(c.symbol), info.isEtf ? el("span", { class: "tag", text: "fund" }) : null)),
       el("td", { class: "left" }, el("span", { class: "two" }, strikesLabel(c), el("small", {}, `${M.shortDate(s.expiration)}, `, el("span", { class: "days", text: `${s.dte} days, ` }), `${width(s.width)} wide`))),
       el("td", { text: pct(s.profitPct) }),
       el("td", { text: pct(s.popPct) }),
@@ -334,7 +380,7 @@
       el("td", {}, el("span", { class: "score" }, el("b", { text: String(Math.round(c.score * 100)) }), el("i", { style: `--w:${Math.round(c.score * 100)}%` }))),
     );
     if (!open) return [tr];
-    const detail = el("tr", { class: "detail", id: `d-${rowKey(c)}` }, el("td", { colspan: String(COLUMNS.length) }, detailBlock(c, info)));
+    const detail = el("tr", { class: "detail", id: `d-${k}` }, el("td", { colspan: String(COLUMNS.length) }, detailBlock(c, info)));
     return [tr, detail];
   }
 
@@ -591,6 +637,48 @@
       root.setAttribute("data-theme", next);
       try { localStorage.setItem("spread-scanner.theme", next); } catch { /* not remembered */ }
       label();
+      // the widget reads its theme only when it loads, so an open chart needs a fresh src
+      if (chartSymbol !== null) $("chart-frame").src = M.tradingViewEmbedUrl(chartSymbol, next);
+    });
+  }
+
+  // ---- the chart panel -------------------------------------------------------------------
+  // equity-watch's: TradingView's advanced-chart widget in an iframe over the page, one panel whose src is swapped
+  // per symbol, so clicking through tickers never piles up tabs. The frame is cross-origin with no messages back.
+  let chartSymbol = null;
+  let chartReturn = null;
+
+  function openChart(symbol) {
+    chartSymbol = symbol;
+    chartReturn = document.activeElement;
+    const theme = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+    $("chart-title").replaceChildren(
+      symbol,
+      " ",
+      el("a", { class: "chart-out", href: M.tradingViewUrl(symbol), target: "tradingview", text: "Open in TradingView" }),
+    );
+    $("chart-frame").src = M.tradingViewEmbedUrl(symbol, theme);
+    $("chart-backdrop").hidden = false;
+    $("chart-panel").hidden = false;
+    document.body.classList.add("chart-open");
+    $("chart-panel").focus();
+  }
+
+  function closeChart() {
+    chartSymbol = null;
+    $("chart-panel").hidden = true;
+    $("chart-backdrop").hidden = true;
+    document.body.classList.remove("chart-open");
+    $("chart-frame").src = "about:blank"; // stop the widget while it is hidden, not only hide it
+    if (chartReturn && chartReturn.isConnected) chartReturn.focus({ preventScroll: true });
+    chartReturn = null;
+  }
+
+  function buildChart() {
+    $("chart-close").addEventListener("click", closeChart);
+    $("chart-backdrop").addEventListener("click", closeChart);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && chartSymbol !== null) closeChart();
     });
   }
 
@@ -608,6 +696,7 @@
   buildWeights();
   buildHead();
   buildTheme();
+  buildChart();
   buildTickets();
   buildControlsFold();
   syncFilters();

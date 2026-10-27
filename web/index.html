@@ -175,10 +175,14 @@
   tbody tr.item:hover td { background: var(--surface); }
   tbody tr.item.open td { background: var(--surface); border-bottom-color: transparent; }
   tbody tr.item.open td:first-child { box-shadow: inset 3px 0 0 var(--signal); }
-  .sym { all: unset; cursor: pointer; display: inline-flex; align-items: baseline; gap: 0.5rem; font-weight: 700; font-stretch: 112%; letter-spacing: 0.01em; }
-  .sym:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+  /* The whole row opens it; the ticker opens its chart and the strikes OptionStrat, so those two are links. */
+  tbody tr.item { cursor: pointer; }
+  tbody tr.item:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+  .sym { display: inline-flex; align-items: baseline; gap: 0.5rem; font-weight: 700; font-stretch: 112%; letter-spacing: 0.01em; }
   .sym::before { content: "+"; width: 0.8rem; color: var(--muted); font-weight: 400; }
   tr.open .sym::before { content: "–"; }
+  a.sym-link { color: inherit; text-decoration: none; }
+  a.sym-link:hover { text-decoration: underline; text-decoration-color: var(--signal); }
   .tag { font-size: 0.72rem; font-weight: 500; font-stretch: 100%; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 3px; padding: 0 0.3rem; }
   .two { display: flex; flex-direction: column; line-height: 1.25; }
   .two small { color: var(--muted); font-size: 0.76rem; }
@@ -231,6 +235,20 @@
   .ticket-status.bad { color: var(--signal); }
   .ticket-token { display: flex; gap: 0.5rem; }
   .ticket-token input { flex: 1; min-width: 0; }
+
+  /* ---- the chart panel, as in equity-watch -------------------------------- */
+  body.chart-open { overflow: hidden; }
+  .backdrop { position: fixed; inset: 0; z-index: 31; background: color-mix(in oklab, var(--ground) 55%, transparent); backdrop-filter: blur(2px); }
+  .chart-panel {
+    position: fixed; inset: 4vh 4vw; z-index: 32; flex-direction: column; gap: 0.6rem; outline: none;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); box-shadow: var(--shadow); padding: 1rem 1.25rem;
+  }
+  .chart-panel:not([hidden]) { display: flex; }
+  .chart-head { display: flex; align-items: center; gap: 1rem; }
+  .chart-head h2 { flex: 1; margin: 0; font-size: 1.3rem; font-weight: 700; font-stretch: 112%; display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+  .chart-out { font-size: 0.82rem; font-weight: 500; font-stretch: 100%; color: var(--sub); }
+  .chart-panel iframe { flex: 1; width: 100%; border: 0; border-radius: 6px; background: var(--ground); }
+  @media (max-width: 860px) { .chart-panel { inset: 0.5rem; padding: 0.7rem; } }
 
   .empty { max-width: 46ch; padding: 2.5rem 0; }
   .empty h2 { margin: 0 0 0.4rem; font-size: 1.15rem; font-weight: 650; font-stretch: 100%; }
@@ -413,6 +431,12 @@
   <details class="dropped" id="dropped"><summary id="dropped-summary"></summary><ul id="dropped-list"></ul></details>
 </main>
 </div>
+
+<div id="chart-backdrop" class="backdrop" hidden></div>
+<aside id="chart-panel" class="chart-panel" tabindex="-1" aria-labelledby="chart-title" hidden>
+  <div class="chart-head"><h2 id="chart-title"></h2><button id="chart-close" type="button" aria-label="Close the chart">Close</button></div>
+  <iframe id="chart-frame" title="TradingView chart"></iframe>
+</aside>
 
 <!--SCAN-DATA-->
 <script src="model.js"></script>

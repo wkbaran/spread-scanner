@@ -218,6 +218,19 @@ test('OptionStrat links: the leg bought, then the leg sold with a minus, in the 
   assert.match(M.optionStratUrl(make('QQQ', 'call', '2027-01-08', 700, 705)) as string, /\.QQQ270108C705,-\.QQQ270108C700$/);
 });
 
+test('TradingView links: the chart page and the panel\'s widget, with a class share\'s slash as a dot', () => {
+  assert.equal(M.tradingViewUrl('SPY'), 'https://www.tradingview.com/chart/?symbol=SPY');
+  assert.equal(M.tradingViewUrl('BRK/B'), 'https://www.tradingview.com/chart/?symbol=BRK.B');
+  assert.equal(M.tradingViewUrl('<x>'), null);
+  const embed = M.tradingViewEmbedUrl('BRK/B', 'light') as string;
+  assert.ok(embed.startsWith('https://s.tradingview.com/embed-widget/advanced-chart/#'));
+  const settings = JSON.parse(decodeURIComponent(embed.split('#')[1] as string));
+  assert.equal(settings.symbol, 'BRK.B');
+  // both keys, because the endpoint has honoured each at different times
+  assert.equal(settings.theme, 'light');
+  assert.equal(settings.colorTheme, 'light');
+});
+
 test('"Try in spread-book" links: the trade in the fragment, in this page\'s units, and no link without a URL', () => {
   const base = ranked('AAA', 0.5, {});
   const c: RankedCandidate = {

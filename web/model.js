@@ -223,6 +223,41 @@
   }
 
   /**
+   * The ticker's TradingView chart. No exchange prefix: the scan does not carry one, so TradingView picks the
+   * listing, which for a few tickers is a foreign one. A class share's slash becomes TradingView's dot (BRK/B is
+   * BRK.B). Null for anything that does not look like a ticker.
+   */
+  function tradingViewSymbol(symbol) {
+    return /^[A-Z][A-Z0-9]*([./][A-Z0-9]+)?$/.test(symbol) ? symbol.replace("/", ".") : null;
+  }
+  function tradingViewUrl(symbol) {
+    const tv = tradingViewSymbol(symbol);
+    return tv === null ? null : `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tv)}`;
+  }
+
+  /**
+   * The chart panel's src: TradingView's advanced-chart widget, its settings as JSON in the hash, as equity-watch
+   * builds it (see chartEmbedUrl there for how the keys were found). The theme goes under both `theme` and
+   * `colorTheme` because the endpoint has honoured each at different times; keep both. The Moving Average Ribbon
+   * draws the 20, 50, 100 and 200 day averages with no overrides, which this endpoint handles badly.
+   */
+  function tradingViewEmbedUrl(symbol, theme) {
+    const settings = {
+      symbol: tradingViewSymbol(symbol) ?? "",
+      interval: "D",
+      timezone: "America/New_York",
+      theme,
+      colorTheme: theme,
+      style: "1",
+      autosize: true,
+      hide_side_toolbar: true,
+      allow_symbol_change: true,
+      studies: ["STD;MA%Ribbon"],
+    };
+    return `https://s.tradingview.com/embed-widget/advanced-chart/#${encodeURIComponent(JSON.stringify(settings))}`;
+  }
+
+  /**
    * The link that opens spread-book's report with this spread added as a trial trade ("Try in spread-book"):
    * `base` with `#try=` and the trade as base64url JSON, `{ v: 1, trades: [trade] }`. spread-book's `readTry`
    * and `tryTrade` (book.js there) read it and convert the units, so the trade goes in this page's own: credit
@@ -274,6 +309,8 @@
     ruler,
     shortDate,
     optionStratUrl,
+    tradingViewUrl,
+    tradingViewEmbedUrl,
     spreadBookUrl,
     paperTicket,
     GREEKS,
