@@ -184,6 +184,8 @@
   a.sym-link { color: inherit; text-decoration: none; }
   a.sym-link:hover { text-decoration: underline; text-decoration-color: var(--signal); }
   .tag { font-size: 0.72rem; font-weight: 500; font-stretch: 100%; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 3px; padding: 0 0.3rem; }
+  .tag.held { color: var(--signal); border-color: var(--signal); }
+  .held-missing { max-width: 70ch; margin: 0 0 1rem; }
   .two { display: flex; flex-direction: column; line-height: 1.25; }
   .two small { color: var(--muted); font-size: 0.76rem; }
   .left .two { align-items: flex-start; }
@@ -290,6 +292,7 @@
   }
   @container list (max-width: 740px) {
     .tag { display: none; }
+    .tag.held { display: inline; } /* a position you hold stays marked however narrow the list */
     .long { display: none; }
     .short { display: inline; }
     .ruler { width: 72px; height: auto; }
@@ -418,6 +421,7 @@
 <main>
   <p id="summary" class="summary" aria-live="polite"></p>
   <p class="note key">In each row the line is the stock, the shaded band is one expected move either side of it, and the bar runs from the short strike to the long strike. A dashed tick marks the break-even, and an arrow means a strike is past the edge (1.5 expected moves).</p>
+  <p id="held-missing" class="note held-missing" hidden></p>
   <div class="table-wrap" id="table-wrap">
     <table id="spreads">
       <thead><tr id="head"></tr></thead>

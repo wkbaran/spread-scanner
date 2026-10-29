@@ -33,6 +33,10 @@ x-common: &common
     # default: a missing one would mount an empty directory owned by root.
     # :z relabels for SELinux hosts (Fedora CoreOS); other hosts ignore it.
     - ${STATE_DIR:?set STATE_DIR in docker/.env to an absolute path on the Docker host}:/data:z
+    # spread-book's reports/, read-only, for its latest.json: the report marks the spreads you hold there
+    # (SPREAD_BOOK_BRIEF in the Dockerfile). Optional: unset, the state directory stands in, which has no
+    # latest.json, so the report says so in the log and marks nothing.
+    - ${SPREAD_BOOK_REPORTS:-${STATE_DIR}}:/spread-book:ro,z
   init: true
 
 services:

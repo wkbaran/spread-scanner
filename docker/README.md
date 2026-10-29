@@ -32,6 +32,10 @@ has no default on purpose: an unset one would mount an empty directory.
 cp docker/.env.example docker/.env      # then set STATE_DIR to an absolute path on the Docker host
 ```
 
+If spread-book runs on the same host, set `SPREAD_BOOK_REPORTS` in `docker/.env` to its `reports/` directory.
+It is mounted read-only at `/spread-book`, and each report reads the `latest.json` there (`SPREAD_BOOK_BRIEF`)
+to mark the spreads you hold. Without it the report marks none and says so in the log.
+
 ## Time zones
 
 Everything a person reads is in one zone, Mountain, the same as equity-watch's container: the schedule in

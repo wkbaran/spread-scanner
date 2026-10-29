@@ -57,6 +57,7 @@ RUN sed -i 's/\r$//' docker/*.sh docker/crontab \
 # service shows a time in a zone the next one does not. Change it here and in config's display.timeZone.
 ENV HOME=/data \
     SPREAD_SCANNER_STATE_DIR=/data \
+    SPREAD_BOOK_BRIEF=/spread-book/latest.json \
     TZ=America/Denver \
     NODE_ENV=production
 WORKDIR /data

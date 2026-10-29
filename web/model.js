@@ -156,11 +156,47 @@
     });
   }
 
-  /** The list on screen: filter, re-score, sort, then cap each underlying and side (so the cap keeps its best by the sort). */
+  const spreadKey = (symbol, side, expiration, short, long) => [symbol, side, expiration, short, long].join("|");
+  const candidateKey = (c) => spreadKey(c.symbol, c.spread.side, c.spread.expiration, c.spread.short.strike, c.spread.long.strike);
+
+  /** The spreads open in spread-book (scan.held, added by the report), by the key a matching candidate has. */
+  function heldByKey(scan) {
+    const spreads = (scan.held && scan.held.spreads) || [];
+    return new Map(spreads.map((h) => [spreadKey(h.symbol, h.side, h.expiration, h.shortStrike, h.longStrike), h]));
+  }
+
+  /** The held spread this candidate is, or null. */
+  const heldFor = (scan, c) => heldByKey(scan).get(candidateKey(c)) || null;
+
+  /**
+   * The list on screen: filter, re-score, sort, then cap each underlying and side (so the cap keeps its best by the
+   * sort). A spread held in spread-book is shown whatever the filters and the cap say, but only when its ticker is
+   * on screen already: holding it is no reason to show a ticker the filters ruled out (the owner's call).
+   */
   function visible(scan, weights, filters, sortKey, direction) {
     const filtered = filterCandidates(scan.candidates, scan.symbols, filters);
     const sorted = sortCandidates(rescore(filtered, weights), sortKey, direction);
-    return capPerUnderlying(sorted, filters.perUnderlying);
+    const shown = capPerUnderlying(sorted, filters.perUnderlying);
+    const held = heldByKey(scan);
+    if (held.size === 0) return shown;
+    const tickers = new Set(shown.map((c) => c.symbol));
+    const keep = new Set(shown.map(candidateKey));
+    const extra = scan.candidates.filter((c) => tickers.has(c.symbol) && held.has(candidateKey(c)) && !keep.has(candidateKey(c)));
+    if (extra.length === 0) return shown;
+    for (const c of extra) keep.add(candidateKey(c));
+    const pool = [...filtered, ...extra.filter((c) => !filtered.includes(c))];
+    return sortCandidates(rescore(pool, weights), sortKey, direction).filter((c) => keep.has(candidateKey(c)));
+  }
+
+  /**
+   * Held spreads on a ticker that is on screen but that no candidate in this scan matches: the short leg has left
+   * the delta band, a leg is too wide or too thin, the expiration is out of the window, and so on. The scan keeps
+   * no reason per spread, so the page can only say it is not among them.
+   */
+  function heldNotFound(scan, list) {
+    const tickers = new Set(list.map((c) => c.symbol));
+    const found = new Set(scan.candidates.map(candidateKey));
+    return [...heldByKey(scan)].filter(([k, h]) => tickers.has(h.symbol) && !found.has(k)).map(([, h]) => h);
   }
 
   function distinctWidths(candidates) {
@@ -292,6 +328,17 @@
   }
 
   /**
+   * The link to a held spread in spread-book's report: `base` with `?spread=` its spreadKey, which the report
+   * selects on its first draw (findSpread, book.js there). Null without a base.
+   */
+  function spreadBookPositionUrl(base, held) {
+    if (!base) return null;
+    const url = new URL(String(base).split("#")[0]);
+    url.searchParams.set("spread", held.key);
+    return url.href;
+  }
+
+  /**
    * The ticket the "Paper trade" button sends (POST /api/tickets): spread-book's watcher opens this spread as a paper
    * trade, one contract, priced from live quotes when it acts, not at these. `seen` is what this page showed, kept
    * with the trade for comparison. The ticket Lambda (infra/cloudformation.yaml) checks the shape; keep the two in
@@ -322,6 +369,8 @@
     filterCandidates,
     capPerUnderlying,
     visible,
+    heldFor,
+    heldNotFound,
     distinctWidths,
     distinctExpirations,
     ruler,
@@ -330,6 +379,7 @@
     tradingViewUrl,
     tradingViewEmbedUrl,
     spreadBookUrl,
+    spreadBookPositionUrl,
     paperTicket,
     GREEKS,
     netGreeks,

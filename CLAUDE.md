@@ -84,6 +84,17 @@ The "Keep only" fields start at `display.filters` from the scan's own embedded c
 - **The link targets a named tab (`spread-book`) and has no `rel="noopener"`, on purpose.** Then the next try lands in the same spread-book tab as a fragment change, and the trades stack there. With `noopener` the browser opens a new tab each time (the two sites are different origins).
 - It is the fragment, not a query string, so the trade never reaches CloudFront's logs.
 
+## Held spreads: spread-book's positions on the page
+
+`report` (not `scan`) reads spread-book's brief, `latest.json` (`src/held.ts`, `--held` or `SPREAD_BOOK_BRIEF`), and embeds its open spreads beside the scan as `held`. The page tags the matching rows (`heldFor`, `visible` and `heldNotFound` in `web/model.js`). Things that look simplifiable and aren't:
+
+- **Read at report time, never saved in the run.** The run is the scan, and `validate` reads runs; the positions are what the owner holds when the page is built. Rebuilding an old report therefore shows today's holdings against old candidates.
+- **A held spread skips the filters and the cap only when its ticker already has a row on screen** (the user's call, 2026-10-28: "always show it, but only if the ticker shows up somewhere in the search"). It is the owner's QQQ 775/770 that prompted it: a candidate in every scan, ranked 91st of 489 but 32nd of 62 QQQ calls, so the cap of three always hid it. Do not widen this to "always show every held spread": a ticker the filters ruled out stays out.
+- **The brief is the contract, not the portfolio file.** `latest.json` is spread-book's documented output for other programs (schema `spread-book/brief@1`) and carries `kind`, `strikes` and `shortStrike`. Strikes in the name are in OptionStrat's order ("775/770" for a bear call), so the short strike is taken from `shortStrike`, never from position in the string. `test/web.test.ts` runs spread-book's `tryTrade`, `enrich` and `findSpread` against this side when the repos sit side by side.
+- **"Open in spread-book" uses `?spread=<spreadKey>`**, spread-book's own link to a position (equity-watch uses it too). The key is `name|expiration|strikes`, built in `src/held.ts`; change spread-book's `spreadKey` and this link stops selecting anything.
+- **The container mounts spread-book's `reports/` read-only at `/spread-book`**, from `SPREAD_BOOK_REPORTS` in `docker/.env`. Unset, compose mounts the state directory there instead (it has no `latest.json`), because compose cannot make a volume optional. A missing or unreadable brief is a log line, never a failed report.
+- **It puts the owner's positions in the published page.** That is fine behind the site's basic auth, which is on. Without basic auth, leave `SPREAD_BOOK_REPORTS` unset.
+
 ## "Paper trade": the one path that writes back
 
 The stack's optional ticket path (`EnableTickets`) is equity-watch's ops queue, copied: the page POSTs to `/api/tickets` on its own CloudFront (same origin, no CORS), an inline Lambda checks the token and the ticket's shape, and SQS FIFO carries it to spread-book's `ticket-watch.js` on the Docker host, which long-polls and answers in `tickets/<id>.json`. Things that look simplifiable and aren't:

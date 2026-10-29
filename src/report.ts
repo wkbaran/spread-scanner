@@ -1,4 +1,4 @@
-import type { RankedScan } from './types.ts';
+import type { ReportData } from './types.ts';
 
 export const DATA_MARKER = '<!--SCAN-DATA-->';
 
@@ -18,7 +18,7 @@ export function jsonForScript(value: unknown): string {
 }
 
 /** index.html with the scan inlined, so the page opens straight from disk with no server. */
-export function renderReport(template: string, scan: RankedScan): string {
+export function renderReport(template: string, scan: ReportData): string {
   if (!template.includes(DATA_MARKER)) throw new Error(`The page template has no ${DATA_MARKER} placeholder`);
   return template.replace(DATA_MARKER, () => `<script id="scan-data" type="application/json">${jsonForScript(scan)}</script>`);
 }

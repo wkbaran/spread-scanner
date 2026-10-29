@@ -6,6 +6,7 @@ import { FileCache, noCache } from './cache.ts';
 import { loadConfig } from './config.ts';
 import { DEFAULT_CREDENTIALS_PATH, loadCredentials } from './credentials.ts';
 import { summarize } from './format.ts';
+import { loadHoldings } from './held.ts';
 import { Http } from './http.ts';
 import { NyFed } from './providers/nyfed.ts';
 import { resolveRate } from './rate.ts';
@@ -31,8 +32,9 @@ const USAGE = `Usage:
   node src/cli.ts scan [--symbols A,B,C | --symbols-file FILE] [options]
     With no symbols it starts from every optionable stock and fund and narrows by liquidity,
     the earnings rule and how rich IV is (config "universe"). With symbols it scans exactly those.
-  node src/cli.ts report [--run FILE] [--out DIR]
+  node src/cli.ts report [--run FILE] [--out DIR] [--held FILE]
     Builds the browser report from a saved scan (default: the latest in runs/) into report/.
+    --held is spread-book's latest.json (default: SPREAD_BOOK_BRIEF), whose open spreads the page marks.
   node src/cli.ts validate [--runs DIR] [--min-age-days N]
     Checks the saved runs that are old enough against what the market did next.
   node src/cli.ts publish [--dir DIR]
@@ -77,7 +79,7 @@ export function latestRun(dir: string): string | null {
   return last === undefined ? null : join(dir, last);
 }
 
-function report(values: { run?: string; out?: string }): number {
+function report(values: { run?: string; out?: string; held?: string }): number {
   const file = values.run ?? latestRun(join(stateDir, 'runs'));
   if (file === null || !existsSync(file)) {
     process.stderr.write('No saved scan to report on. Run a scan first, or pass --run FILE.\n');
@@ -86,7 +88,10 @@ function report(values: { run?: string; out?: string }): number {
   const scanned = JSON.parse(readFileSync(file, 'utf8')) as RankedScan;
   const out = resolve(values.out ?? join(stateDir, 'report'));
   const web = join(root, 'web');
-  writeAtomic(join(out, 'index.html'), renderReport(readFileSync(join(web, 'index.html'), 'utf8'), scanned));
+  // Read now, not at scan time, so the page carries the newest positions spread-book has pulled.
+  const held = loadHoldings(values.held ?? process.env.SPREAD_BOOK_BRIEF, (m) => void process.stderr.write(`${m}\n`));
+  if (held !== null) process.stdout.write(`${held.spreads.length} spreads held in spread-book (as of ${held.asOf ?? 'unknown'})\n`);
+  writeAtomic(join(out, 'index.html'), renderReport(readFileSync(join(web, 'index.html'), 'utf8'), { ...scanned, held }));
   for (const asset of REPORT_ASSETS) copyFileSync(join(web, asset), join(out, asset));
   process.stdout.write(`Wrote ${join(out, 'index.html')}\nOpen ${pathToFileURL(join(out, 'index.html')).href}\n`);
   return 0;
@@ -141,6 +146,7 @@ async function main(argv: string[]): Promise<number> {
       'per-symbol': { type: 'string' },
       runs: { type: 'string' },
       run: { type: 'string' },
+      held: { type: 'string' },
       dir: { type: 'string' },
       'min-age-days': { type: 'string' },
       'no-cache': { type: 'boolean' },

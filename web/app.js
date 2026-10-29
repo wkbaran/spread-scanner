@@ -335,10 +335,18 @@
     }, text);
   }
 
+  /** What a held spread is doing in spread-book: its return so far and any exit rule it has hit. */
+  function heldTitle(h) {
+    const ret = h.returnPct === null ? "" : `, ${h.returnPct > 0 ? "+" : ""}${Math.round(h.returnPct)}% of max profit`;
+    const exit = h.exit === "close" ? ", at the profit target" : h.exit === "stop" ? ", at the stop" : "";
+    return `Open in spread-book${ret}${exit}`;
+  }
+
   function row(c) {
     const s = c.spread;
     const info = scan.symbols[c.symbol];
     const k = rowKey(c);
+    const held = M.heldFor(scan, c);
     const open = state.open.has(k);
     const toggle = () => {
       if (state.open.has(k)) state.open.delete(k);
@@ -369,7 +377,7 @@
           toggle();
         },
       },
-      el("td", { class: "left" }, el("span", { class: "sym" }, symbolLink(c.symbol), info.isEtf ? el("span", { class: "tag", text: "fund" }) : null)),
+      el("td", { class: "left" }, el("span", { class: "sym" }, symbolLink(c.symbol), info.isEtf ? el("span", { class: "tag", text: "fund" }) : null, held ? el("span", { class: "tag held", title: heldTitle(held), text: "held" }) : null)),
       el("td", { class: "left" }, el("span", { class: "two" }, strikesLabel(c), el("small", {}, `${M.shortDate(s.expiration)}, `, el("span", { class: "days", text: `${s.dte} days, ` }), `${width(s.width)} wide`))),
       el("td", { text: pct(s.profitPct) }),
       el("td", { text: pct(s.popPct) }),
@@ -427,7 +435,10 @@
     );
 
     const url = M.optionStratUrl(c);
-    const book = M.spreadBookUrl(scan.config.display && scan.config.display.spreadBookUrl, c);
+    const bookBase = scan.config.display && scan.config.display.spreadBookUrl;
+    const held = M.heldFor(scan, c);
+    // A spread already held opens as that position in spread-book; trying it again would add a copy as a trial.
+    const book = held ? M.spreadBookPositionUrl(bookBase, held) : M.spreadBookUrl(bookBase, c);
     const paperOut = el("p", { class: "ticket-status", "aria-live": "polite" });
     const paper = ticketToken
       ? el("button", { type: "button", title: "Open this spread as a paper trade in spread-book: one contract, filled at live quotes when spread-book acts", text: "Paper trade" })
@@ -470,7 +481,11 @@
             { class: "detail-actions" },
             url === null ? null : el("a", { class: "button", href: url, target: OPTIONSTRAT_TAB, text: "Open in OptionStrat" }),
             // A named tab without noopener, so later tries land in the same spread-book tab and stack there.
-            book === null ? null : el("a", { class: "button", href: book, target: "spread-book", title: "Open spread-book with this spread added as a trial trade, one contract at the mid", text: "Try in spread-book" }),
+            book === null
+              ? null
+              : held
+                ? el("a", { class: "button", href: book, target: "spread-book", title: `${heldTitle(held)}. Opens it in spread-book's report`, text: "Open in spread-book" })
+                : el("a", { class: "button", href: book, target: "spread-book", title: "Open spread-book with this spread added as a trial trade, one contract at the mid", text: "Try in spread-book" }),
             paper,
             paper ? paperOut : null,
           ),
@@ -503,14 +518,27 @@
       else th.removeAttribute("aria-sort");
     }
     const names = new Set(list.map((c) => c.symbol)).size;
+    const heldShown = list.filter((c) => M.heldFor(scan, c)).length;
     $("count-shown").textContent = String(list.length);
     const per = state.filters.perUnderlying;
     $("summary").replaceChildren(
       el("strong", { text: String(list.length) }),
-      ` of ${scan.candidates.length} spreads, on ${names} of ${Object.keys(scan.symbols).length} symbols${per ? `, the best ${per} of each side` : ""}, ordered by ${SORT_NAMES[state.sortKey] || state.sortKey}, ${DIRECTION_WORDS[state.sortKey] ? DIRECTION_WORDS[state.sortKey][state.sortDir] : state.sortDir === "desc" ? "highest first" : "lowest first"}.`,
+      ` of ${scan.candidates.length} spreads, on ${names} of ${Object.keys(scan.symbols).length} symbols${per ? `, the best ${per} of each side` : ""}${heldShown ? `, with ${heldShown === 1 ? "the spread" : `the ${heldShown} spreads`} you hold` : ""}, ordered by ${SORT_NAMES[state.sortKey] || state.sortKey}, ${DIRECTION_WORDS[state.sortKey] ? DIRECTION_WORDS[state.sortKey][state.sortDir] : state.sortDir === "desc" ? "highest first" : "lowest first"}.`,
     );
     $("empty").hidden = list.length > 0;
     $("table-wrap").hidden = list.length === 0;
+    renderHeldNotFound(list);
+  }
+
+  /** Held spreads on a ticker on screen that this scan did not find, so a position never silently goes missing. */
+  function renderHeldNotFound(list) {
+    const missing = M.heldNotFound(scan, list);
+    $("held-missing").hidden = missing.length === 0;
+    $("held-missing").replaceChildren(
+      el("strong", { text: missing.length === 1 ? "Held, not in this scan: " : `${missing.length} held spreads not in this scan: ` }),
+      missing.map((h) => `${h.name}${h.returnPct === null ? "" : ` (${h.returnPct > 0 ? "+" : ""}${Math.round(h.returnPct)}%)`}`).join("; "),
+      `. The scan did not find ${missing.length === 1 ? "it" : "them"} among its candidates: a short leg may have left the delta band, a leg may be too wide or thin, or the expiration may be outside the window.`,
+    );
   }
 
   function update() {

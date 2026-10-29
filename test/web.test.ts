@@ -5,7 +5,8 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { weightedScore } from '../src/rank.ts';
 import { DATA_MARKER, REPORT_ASSETS, jsonForScript, renderReport } from '../src/report.ts';
-import type { RankWeights, Ranks, RankedCandidate, RankedScan } from '../src/types.ts';
+import { readHoldings } from '../src/held.ts';
+import type { HeldSpread, RankWeights, Ranks, RankedCandidate, RankedScan, ReportData } from '../src/types.ts';
 import { close, config } from './fixtures.ts';
 import { info, ranked, run } from './scans.ts';
 
@@ -13,7 +14,7 @@ const webPath = (name: string): string => fileURLToPath(new URL(`../web/${name}`
 
 /** The page's model.js, run in a bare context the way a browser would run a classic script. */
 function loadModel() {
-  const context = vm.createContext({ btoa }); // a browser global the page's encoder uses
+  const context = vm.createContext({ btoa, URL }); // browser globals the page's links use
   vm.runInContext(readFileSync(webPath('model.js'), 'utf8'), context);
   return (context as { SpreadModel: Record<string, (...args: never[]) => unknown> & { WEIGHT_KEYS: string[]; RULER_EM: number } }).SpreadModel;
 }
@@ -317,6 +318,72 @@ test('spread-book reads the "Try in spread-book" link as the same spread', { ski
   close(t.delta, (s.long.delta - s.short.delta) * 100, 1e-9);
 });
 
+// A held spread as src/held.ts makes it from spread-book's brief.
+const heldOf = (c: RankedCandidate, over: Partial<HeldSpread> = {}): HeldSpread => ({
+  symbol: c.symbol, side: c.spread.side, expiration: c.spread.expiration, shortStrike: c.spread.short.strike, longStrike: c.spread.long.strike,
+  name: `${c.symbol} spread`, key: `${c.symbol} spread|${c.spread.expiration}|x`, returnPct: 20, exit: null, ...over,
+});
+const keysOf = (list: RankedCandidate[]) => plain(list.map((c) => `${c.symbol} ${c.spread.short.strike}`));
+
+test('a held spread is shown past the cap and the filters, in its place in the sort, but only on a ticker already on screen', () => {
+  const s = scan();
+  const capOne = { ...M.emptyFilters(), perUnderlying: 1 };
+  const base = M.visible(s, s.weights, capOne, 'score', 'desc') as RankedCandidate[];
+  assert.deepEqual(keysOf(base).map((k) => k.split(' ')[0]), ['AAA', 'BBB'], 'without holdings the cap keeps one each');
+  const hidden = s.candidates.find((c) => c.symbol === 'AAA' && !keysOf(base).includes(`AAA ${c.spread.short.strike}`))!;
+  const bbb = s.candidates.find((c) => c.symbol === 'BBB')!;
+
+  const held: ReportData = { ...s, held: { asOf: null, spreads: [heldOf(hidden)] } };
+  const withHeld = M.visible(held, s.weights, capOne, 'score', 'desc') as RankedCandidate[];
+  assert.deepEqual(keysOf(withHeld).sort(), [...keysOf(base), `AAA ${hidden.spread.short.strike}`].sort(), 'past the cap, the rest unchanged');
+  const scores = plain(withHeld.map((c) => c.score));
+  assert.deepEqual(scores, [...scores].sort((a, b) => b - a), 'in its place in the sort');
+  assert.deepEqual(keysOf(M.visible(held, s.weights, { ...capOne, minReturn: 1e9 }, 'score', 'desc')), [], 'nothing on screen, so nothing held shows either');
+  const callsOnly = { ...capOne, put: false };
+  assert.deepEqual(keysOf(M.visible(held, s.weights, callsOnly, 'score', 'desc')), ['BBB 110'], 'AAA has no row on screen, so its held put stays hidden');
+  assert.ok(M.heldFor(held, hidden), 'the page can tell which row is held');
+  assert.equal(M.heldFor(held, bbb), null);
+  // a held spread that the cap shows anyway is not counted twice
+  const heldShown: ReportData = { ...s, held: { asOf: null, spreads: [heldOf(base[0]!)] } };
+  assert.deepEqual(keysOf(M.visible(heldShown, s.weights, capOne, 'score', 'desc')), keysOf(base));
+});
+
+test('held spreads this scan did not find are listed, for tickers on screen only', () => {
+  const s = scan();
+  const gone = heldOf(s.candidates[0]!, { shortStrike: 70, longStrike: 65, name: 'AAA gone' });
+  const elsewhere = heldOf(s.candidates[0]!, { symbol: 'ZZZ', name: 'ZZZ gone' });
+  const held: ReportData = { ...s, held: { asOf: null, spreads: [gone, elsewhere, heldOf(s.candidates[2]!)] } };
+  const list = M.visible(held, s.weights, M.emptyFilters(), 'score', 'desc');
+  assert.deepEqual(plain(M.heldNotFound(held, list)).map((h: HeldSpread) => h.name), ['AAA gone']);
+  assert.deepEqual(plain(M.heldNotFound(s, list)), [], 'a page with no holdings lists none');
+});
+
+test('a held spread links to its own position in spread-book, by its spreadKey', () => {
+  const h = heldOf(ranked('AAA', 0.5), { key: 'QQQ Dec 4th 775/770 Bear Call Spread|2026-12-04|775/770' });
+  assert.equal(M.spreadBookPositionUrl(undefined, h), null);
+  const url = new URL(M.spreadBookPositionUrl('https://book.example.com/?snapshot=x#try=old', h) as string);
+  assert.equal(url.searchParams.get('spread'), h.key);
+  assert.equal(url.searchParams.get('snapshot'), 'x');
+  assert.equal(url.hash, '', 'no stale trial rides along');
+});
+
+test('spread-book names a held spread the way the page matches it, and finds it again by the key', { skip: !existsSync(bookPath) && 'spread-book is not checked out next to this repository' }, () => {
+  const context = vm.createContext({ atob, URLSearchParams });
+  vm.runInContext(readFileSync(bookPath, 'utf8'), context);
+  const SB = (context as { SpreadBook: any }).SpreadBook;
+  for (const c of [ranked('AAA', 0.5, { expiration: '2026-12-04' }), ranked('QQQ', 0.5, { side: 'call', shortStrike: 770, expiration: '2026-12-04' })]) {
+    // A spread as spread-book holds it: named by its tryTrade (OptionStrat's form), enriched the way a snapshot
+    // position is, then cut to the brief's fields (brief.js `position`).
+    const [trade] = SB.readTry(new URL(M.spreadBookUrl('https://book.example.com/', c) as string).hash);
+    const p = SB.enrich({ ...trade, hypo: undefined }, { source: 'x-2026-10-28_13-25.csv', spots: {} });
+    const position = { name: p.name, underlying: p.underlying, kind: p.kind, strikes: p.strikes, expiration: p.expiration, shortStrike: p.shortStrike, returnPct: p.returnPct, exit: p.exit || null };
+    const holdings = readHoldings({ schema: 'spread-book/brief@1', generatedAt: null, positions: [plain(position)] });
+    assert.equal(holdings?.spreads.length, 1, `spread-book's ${p.name} is readable`);
+    const report: ReportData = { ...run('2026-10-28', { [c.symbol]: info(0.3) }, [c]), held: holdings };
+    assert.ok(M.heldFor(report, c), `${p.name} matches its candidate`);
+    assert.ok(SB.findSpread([p], holdings!.spreads[0]!.key), 'and spread-book finds it by the key the link carries');
+  }
+});
 test('the filters the page opens with: nothing hidden unless the scan\'s config says where to start', () => {
   const none = plain(M.defaultFilters(undefined));
   assert.deepEqual(none, plain(M.emptyFilters()));

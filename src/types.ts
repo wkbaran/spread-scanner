@@ -254,3 +254,34 @@ export interface RankedScan extends Omit<ScanResult, 'candidates'> {
   weights: RankWeights;
   candidates: RankedCandidate[];
 }
+
+/** A spread open in spread-book (src/held.ts), in the terms the report matches a candidate by. */
+export interface HeldSpread {
+  symbol: string;
+  side: 'put' | 'call';
+  expiration: string;
+  shortStrike: number;
+  longStrike: number;
+  /** spread-book's name for it, OptionStrat's: "QQQ Dec 4th 775/770 Bear Call Spread". */
+  name: string;
+  /** spread-book's spreadKey, for its report's ?spread= link. */
+  key: string;
+  /** Gain or loss as a percentage of max profit, from OptionStrat. */
+  returnPct: number | null;
+  /** spread-book's exit rule, when one is hit. */
+  exit: 'close' | 'stop' | null;
+}
+
+export interface Holdings {
+  /** When spread-book pulled the positions. */
+  asOf: string | null;
+  spreads: HeldSpread[];
+}
+
+/**
+ * What the report page embeds: the saved scan, plus the spreads held when the report was built. The holdings are
+ * read at report time, not saved with the run, so the page shows the latest positions and a run stays the scan.
+ */
+export interface ReportData extends RankedScan {
+  held?: Holdings | null;
+}
