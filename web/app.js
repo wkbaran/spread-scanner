@@ -297,10 +297,11 @@
 
   const rowKey = (c) => [c.symbol, c.spread.side, c.spread.expiration, c.spread.short.strike, c.spread.long.strike].join("|");
 
-  // OptionStrat links open in one named tab per ticker, so another QQQ spread replaces the earlier QQQ one, while a
-  // SPY spread opens beside it instead of piling up tabs. Only plain-letter symbols get a link, so the name is safe.
+  // OptionStrat links open in one named tab per ticker and side, so another QQQ put spread replaces the earlier QQQ
+  // put one, while a QQQ call spread or a SPY spread opens beside it instead of piling up tabs. Only plain-letter
+  // symbols get a link, so the name is safe.
   // No rel="noopener": a tab opened with it cannot be found by name again, and the browser would open a new one.
-  const optionStratTab = (c) => `optionstrat-${c.symbol}`;
+  const optionStratTab = (c) => `optionstrat-${c.symbol}-${c.spread.side}`;
 
   /** The strikes in a row, as a link to the same spread in OptionStrat when there is one. */
   function strikesLabel(c) {
